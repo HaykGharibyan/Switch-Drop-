@@ -50,6 +50,8 @@ export default function Home() {
   const [over, setOver] = useState(false);
   const [paused, setPaused] = useState(false);
   const [best, setBest] = useState(0);
+  const bestRef = useRef(0);
+  const [newBest, setNewBest] = useState(false);
 
   const reset = useCallback(() => {
     const difficulty = getDifficulty(profileRef.current);
@@ -57,14 +59,15 @@ export default function Home() {
     sparkTrailRef.current = [];
     sparkClockRef.current = 0;
     gameRef.current = { lane: 0, visualLane: 0, distance: 0, coins: 0, speed: difficulty.baseSpeed, runners: [], spawnAt: difficulty.spawnMin, last: performance.now(), over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, sparkTheme, difficulty };
-    setScore(0); setCoins(0); setOver(false); setPaused(false);
+    setScore(0); setCoins(0); setOver(false); setPaused(false); setNewBest(false);
   }, []);
   const switchLane = useCallback(() => { const g = gameRef.current; if (!g.over && !g.paused) g.lane = g.lane === 0 ? 1 : 0; }, []);
   const togglePause = useCallback(() => { const g = gameRef.current; if (g.over) return; g.paused = !g.paused; g.last = performance.now(); setPaused(g.paused); }, []);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      setBest(Number(localStorage.getItem('switch-drop-best') || 0));
+      bestRef.current = Number(localStorage.getItem('switch-drop-best') || 0);
+      setBest(bestRef.current);
       setTotalCoins(Number(localStorage.getItem('switch-drop-total-coins') || 0));
       try {
         const saved = JSON.parse(localStorage.getItem('switch-drop-profile') || 'null') as PlayerProfile | null;
@@ -92,13 +95,13 @@ export default function Home() {
         if (g.spawnAt <= 0) {
           const blocked = (Math.random() > .5 ? 1 : 0) as 0 | 1;
           const combo = g.distance > 1100 && difficulty.comboChance > 0 && Math.random() < difficulty.comboChance;
-          g.runners.push({ kind: 'barrier', lane: blocked, z: 0 });
-          if (Math.random() > .18) { g.runners.push({ kind: 'orb', lane: (1 - blocked) as 0 | 1, z: -.16, value: Math.random() < difficulty.goldChance ? 2 : 1 }); g.sparksSpawned += 1; }
+          g.runners.push({ kind: 'barrier', lane: blocked, z: -.2 });
+          if (Math.random() > .18) { g.runners.push({ kind: 'orb', lane: (1 - blocked) as 0 | 1, z: -.36, value: Math.random() < difficulty.goldChance ? 2 : 1 }); g.sparksSpawned += 1; }
           if (combo) {
-            g.runners.push({ kind: 'barrier', lane: (1 - blocked) as 0 | 1, z: -.48 });
+            g.runners.push({ kind: 'barrier', lane: (1 - blocked) as 0 | 1, z: -.54 });
             g.spawnAt = .92 + Math.random() * .12;
           } else {
-            if (Math.random() > .58) { g.runners.push({ kind: 'orb', lane: blocked, z: -.36, value: Math.random() < difficulty.goldChance ? 2 : 1 }); g.sparksSpawned += 1; }
+            if (Math.random() > .58) { g.runners.push({ kind: 'orb', lane: blocked, z: -.56, value: Math.random() < difficulty.goldChance ? 2 : 1 }); g.sparksSpawned += 1; }
             g.spawnAt = difficulty.spawnMin + Math.random() * difficulty.spawnRange;
           }
         }
@@ -123,7 +126,10 @@ export default function Home() {
             };
             profileRef.current = nextProfile;
             localStorage.setItem('switch-drop-profile', JSON.stringify(nextProfile));
-            setBest(old => { const next = Math.max(old, final); localStorage.setItem('switch-drop-best', String(next)); return next; });
+            setNewBest(final > bestRef.current);
+            bestRef.current = Math.max(bestRef.current, final);
+            setBest(bestRef.current);
+            localStorage.setItem('switch-drop-best', String(bestRef.current));
             break;
           }
         }
@@ -312,7 +318,7 @@ export default function Home() {
     frame = requestAnimationFrame(draw); return () => cancelAnimationFrame(frame);
   }, []);
 
-  return <main className="game-shell" onPointerDown={switchLane}>
+  return <main className={`game-shell${over ? ' is-over' : ''}`} onPointerDown={switchLane}>
     <div className="game-backdrop" /><div className="center-glow" aria-hidden="true" /><div className="game-vignette" />
     <canvas ref={canvasRef} className="game-canvas" aria-label="Switch Drop game field" />
     <header className="hud" aria-live="polite"><div className="score-block"><strong>{score}</strong></div></header>
@@ -320,6 +326,17 @@ export default function Home() {
     {!over && <button className="pause-button" type="button" aria-label={paused ? 'Resume game' : 'Pause game'} onPointerDown={e => e.stopPropagation()} onClick={togglePause}><span aria-hidden="true"><i /><i /></span></button>}
     {!over && score < 45 && <div className="hint"><b>TAP TO SWITCH</b><span className="switch-arrow" aria-hidden="true" /></div>}
     {paused && !over && <section className="pause-screen" onPointerDown={e => e.stopPropagation()}><span>PAUSED</span><button type="button" onClick={togglePause}>RESUME</button></section>}
-    {over && <section className="game-over" onPointerDown={e => e.stopPropagation()}><div className="over-glow" /><div className="neon-orbits" aria-hidden="true"><i /><i /><i /></div><div className="result-stack"><div className="best-result"><span>BEST SCORE</span><strong>{best}</strong></div><div className="run-score"><span>SCORE</span><strong>{score}</strong></div><div className="run-coins"><span>RUN COINS</span><strong><i className="coin-glyph small" aria-hidden="true" />{coins}</strong></div></div><button className="restart-button" type="button" onClick={reset}><span>RESTART</span><i className="restart-glyph" aria-hidden="true" /></button><button className="settings-button" type="button" aria-label="Settings"><span className="gear-glyph" aria-hidden="true"><i /></span></button></section>}
+    {over && <section className="game-over" aria-label="Run results" onPointerDown={e => e.stopPropagation()}>
+      <div className="over-glow" aria-hidden="true" />
+      <div className="neon-orbits" aria-hidden="true"><i /><i /><i /></div>
+      <div className="result-stack">
+        <div className="best-result"><span>BEST SCORE</span><strong>{best}</strong></div>
+        {newBest && <div className="new-best">NEW BEST</div>}
+        <div className="run-score"><span>SCORE</span><strong>{score}</strong></div>
+        <div className="run-coins"><span>RUN COINS</span><strong><i className="coin-glyph small" aria-hidden="true" />{coins}</strong></div>
+      </div>
+      <button className="restart-button" type="button" onClick={reset}><span>RESTART</span><i className="restart-glyph" aria-hidden="true" /></button>
+      <button className="settings-button" type="button" aria-label="Settings"><span className="gear-glyph" aria-hidden="true"><i /></span></button>
+    </section>}
   </main>;
 }

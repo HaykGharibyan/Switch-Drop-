@@ -41,3 +41,40 @@ button { font: inherit; }
 .hint::before { right:calc(50% + 24px); }.hint::after { left:calc(50% + 24px); transform:rotate(180deg); }
 .pause-button { border-color:#9afaff66; background:#061525cc; box-shadow:inset 0 0 12px #2bdfff24,0 0 18px #27dfff20; }
 .total-coins { border-color:#ffe8a04a; background:#17170ed9; box-shadow:inset 0 1px 0 #fff3b51c,inset 0 0 16px #ffc92812,0 0 16px #ffbc171c; }
+
+/* Results float over the frozen run, with a quiet, solid-tinted backdrop. */
+.is-over .hud,.is-over .total-coins { visibility:hidden; }
+.is-over .center-glow,.is-over .center-glow::before,.is-over .center-glow::after { animation-play-state:paused; }
+.game-over { background:rgba(3,9,21,.78); backdrop-filter:blur(12px) saturate(.7); -webkit-backdrop-filter:blur(12px) saturate(.7); animation:results-reveal .4s ease-out both; }
+.game-over::before { opacity:1; box-shadow:inset 0 0 100px #02061565; }
+.over-glow { top:4%; width:min(480px,112vw); border-color:#5fefff12; box-shadow:0 0 55px #30eaff0f,inset 0 0 45px #30eaff08; }
+.neon-orbits { top:4%; width:min(420px,104vw); height:min(410px,55vh); opacity:.8; }
+.neon-orbits i { inset:4% 3%; border-color:#6af3ff35; box-shadow:0 0 12px #2beaff15; animation:result-orbit 24s linear infinite; }
+.neon-orbits i:nth-child(2) { inset:14%; border-color:#a894ff30; animation:result-orbit 32s linear infinite reverse; animation-delay:-9s; }
+.neon-orbits i:nth-child(3) { inset:25%; border-color:#68dfff26; animation:result-orbit 19s linear infinite; animation-delay:-7s; }
+.neon-orbits i::after { content:''; position:absolute; top:50%; left:-3px; width:5px; height:5px; border-radius:50%; background:#c9ffff; box-shadow:0 0 7px #70f7ff,0 0 16px #25cfff; }
+.neon-orbits i:nth-child(2)::after { background:#e2d6ff; box-shadow:0 0 7px #ba98ff,0 0 16px #8250ff; }
+.result-stack { top:max(54px,calc(env(safe-area-inset-top) + 38px)); width:min(360px,88vw); padding:22px 12px; }
+.best-result span,.run-score span,.run-coins span { font-size:12px; letter-spacing:.25em; line-height:1.4; }
+.best-result strong { font-size:clamp(58px,16vw,94px); margin-top:12px; text-shadow:0 0 26px #c9ffff25; }
+.best-result { animation:result-rise .6s .08s both; }
+.run-score { margin-top:38px; animation:result-rise .6s .2s both; }
+.run-score strong { margin-top:10px; font-size:clamp(52px,14vw,82px); text-shadow:0 0 20px #78edff22; }
+.run-coins { margin-top:30px; gap:16px; animation:result-rise .6s .34s both; }
+.run-coins strong { font-size:27px; }
+.run-coins .coin-glyph { animation:result-coin-glint .9s .6s both; }
+.new-best { margin-top:16px; color:#ffe8a0; font-family:'Trebuchet MS',sans-serif; font-size:12px; font-weight:800; letter-spacing:.28em; text-shadow:0 0 9px #ffcd4c90,0 0 22px #ffb92850; animation:result-rise .6s .35s both; }
+.new-best + .run-score { margin-top:24px; }
+.game-over .restart-button { height:66px; width:min(300px,80vw); border-color:#a2faff; background:#092332e8; border-radius:12px; box-shadow:inset 0 0 26px #39e8ff30,inset 0 1px 0 #e4ffff66,0 0 13px #46efff65,0 0 38px #17cfff24; text-shadow:0 0 10px #b6ffff70; letter-spacing:.2em; }
+.game-over .restart-button::before { border-radius:9px; border-color:#c6ffff20; }
+.game-over .restart-button::after { content:''; position:absolute; top:-45%; left:-45%; width:23%; height:190%; background:#bcffff1a; box-shadow:0 0 22px #bcffff30; transform:skewX(-24deg); animation:restart-shine 5.5s 1.2s ease-in-out infinite; pointer-events:none; }
+.game-over .restart-button span,.game-over .restart-glyph { position:relative; z-index:1; }
+.game-over .restart-button:focus-visible,.game-over .settings-button:focus-visible { outline:2px solid #fff; outline-offset:6px; }
+.game-over .settings-button { border-color:#8cedff40; background:#081726b3; box-shadow:inset 0 0 12px #34dfff18,0 0 16px #23d5ff16; }
+@keyframes results-reveal { from { opacity:0; } to { opacity:1; } }
+@keyframes result-rise { from { opacity:0; transform:translateY(12px); filter:blur(4px); } to { opacity:1; transform:translateY(0); filter:blur(0); } }
+@keyframes result-orbit { from { transform:rotate(0); } to { transform:rotate(360deg); } }
+@keyframes result-coin-glint { 0%,100% { filter:brightness(1); } 45% { filter:brightness(1.8); } }
+@keyframes restart-shine { 0%,72% { left:-45%; opacity:0; } 76% { opacity:1; } 95%,100% { left:135%; opacity:0; } }
+@media (max-height:640px) { .result-stack { top:max(24px,env(safe-area-inset-top)); padding-top:12px; } .best-result strong { font-size:54px; } .run-score { margin-top:24px; } .run-score strong { font-size:46px; } .run-coins { margin-top:20px; } .new-best { margin-top:10px; } .new-best + .run-score { margin-top:16px; } .game-over .restart-button { bottom:max(76px,calc(env(safe-area-inset-bottom) + 66px)); height:58px; } }
+@media (prefers-reduced-motion:reduce) { .game-over,.over-glow,.neon-orbits i,.best-result,.run-score,.run-coins,.new-best,.run-coins .coin-glyph,.game-over .restart-button::after { animation:none; } .game-over .restart-button::after { display:none; } }
