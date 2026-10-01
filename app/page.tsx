@@ -40,6 +40,8 @@ const laneX = (lane: number, z: number, width: number) => width * .5 + (lane * 2
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sparkTrailRef = useRef<{ x: number; age: number; phase: number }[]>([]);
+  const sparkClockRef = useRef(0);
   const profileRef = useRef<PlayerProfile>(DEFAULT_PROFILE);
   const gameRef = useRef({ lane: 0 as 0 | 1, visualLane: 0, distance: 0, coins: 0, speed: .31, runners: [] as Runner[], spawnAt: .58, last: 0, over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, sparkTheme: 'cyan' as SparkThemeName, difficulty: getDifficulty(DEFAULT_PROFILE) });
   const [score, setScore] = useState(0);
@@ -52,6 +54,8 @@ export default function Home() {
   const reset = useCallback(() => {
     const difficulty = getDifficulty(profileRef.current);
     const sparkTheme = gameRef.current.sparkTheme ?? 'cyan';
+    sparkTrailRef.current = [];
+    sparkClockRef.current = 0;
     gameRef.current = { lane: 0, visualLane: 0, distance: 0, coins: 0, speed: difficulty.baseSpeed, runners: [], spawnAt: difficulty.spawnMin, last: performance.now(), over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, sparkTheme, difficulty };
     setScore(0); setCoins(0); setOver(false); setPaused(false);
   }, []);
@@ -153,22 +157,67 @@ export default function Home() {
           ctx.restore();
         }
       }
-      const pz = .79, px = laneX(g.visualLane, pz, w), py = projectY(pz), pr = Math.max(11, Math.min(w, h) * .025), spark = SPARK_THEMES[g.sparkTheme] ?? SPARK_THEMES.cyan, pulse = 1 + Math.sin(now * .009) * .07;
-      ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      const tailLength = pr * 8.3, tail = ctx.createLinearGradient(px, py, px, py + tailLength);
-      tail.addColorStop(0, `rgba(${spark.rgb},.86)`); tail.addColorStop(.42, `rgba(${spark.rgb},.34)`); tail.addColorStop(1, `rgba(${spark.rgb},0)`);
-      ctx.strokeStyle = tail; ctx.lineCap = 'round'; ctx.lineWidth = pr * .5; ctx.shadowColor = spark.rim; ctx.shadowBlur = pr * 1.25; ctx.beginPath(); ctx.moveTo(px, py + pr * .65); ctx.bezierCurveTo(px - pr * .12, py + pr * 2.4, px + pr * .16, py + pr * 5.4, px, py + tailLength); ctx.stroke();
-      for (let i = 0; i < 14; i++) {
-        const t = i / 14, ty = py + pr * (1.2 + i * .53), drift = Math.sin(g.distance * 4.4 + i * 1.71) * pr * (.12 + t * .3), radius = Math.max(1.1, pr * (.2 * (1 - t) + .045));
-        ctx.fillStyle = `rgba(${spark.rgb},${(1 - t) * .72})`; ctx.shadowColor = spark.rim; ctx.shadowBlur = pr * .65; ctx.beginPath(); ctx.arc(px + drift, ty, radius, 0, Math.PI * 2); ctx.fill();
+      const pz = .79, px = laneX(g.visualLane, pz, w), py = projectY(pz);
+      const pr = Math.max(12, Math.min(w, h) * .033), spark = SPARK_THEMES[g.sparkTheme] ?? SPARK_THEMES.cyan;
+      const lifetime = .72;
+      // Remember the actual path: the wake stays behind when the head switches lanes.
+      if (!g.paused && !g.over) {
+        sparkClockRef.current += dt;
+        sparkTrailRef.current = sparkTrailRef.current.filter(point => {
+          point.age += dt;
+          return point.age < lifetime;
+        });
+        sparkTrailRef.current.unshift({ x: px / w, age: 0, phase: sparkClockRef.current });
+        sparkTrailRef.current.length = Math.min(sparkTrailRef.current.length, 160);
       }
-      const aura = ctx.createRadialGradient(px, py, 0, px, py, pr * 4.7 * pulse);
-      aura.addColorStop(0, spark.core); aura.addColorStop(.15, spark.rim); aura.addColorStop(.42, `rgba(${spark.rgb},.5)`); aura.addColorStop(1, `rgba(${spark.rgb},0)`); ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(px, py, pr * 4.7 * pulse, 0, Math.PI * 2); ctx.fill();
-      const body = ctx.createRadialGradient(px - pr * .25, py - pr * .28, 0, px, py, pr);
-      body.addColorStop(0, '#ffffff'); body.addColorStop(.34, spark.core); body.addColorStop(.72, spark.rim); body.addColorStop(1, spark.deep); ctx.fillStyle = body; ctx.shadowColor = spark.rim; ctx.shadowBlur = pr * 2; ctx.beginPath(); ctx.arc(px, py, pr * .79 * pulse, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = spark.rim; ctx.lineWidth = Math.max(1.5, pr * .15); ctx.shadowBlur = pr * 1.15; ctx.beginPath(); ctx.arc(px, py, pr * 1.06 * pulse, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = `rgba(${spark.rgb},.72)`; ctx.lineWidth = Math.max(1, pr * .09); ctx.beginPath(); ctx.arc(px, py, pr * 1.33 * pulse, now * .002, now * .002 + Math.PI * 1.25); ctx.stroke();
-      ctx.fillStyle = '#ffffff'; ctx.shadowBlur = pr * .55; ctx.beginPath(); ctx.arc(px - pr * .25, py - pr * .28, pr * .17, 0, Math.PI * 2); ctx.fill(); ctx.restore(); ctx.restore();
+      const time = sparkClockRef.current, pulse = 1 + Math.sin(time * 5) * .025;
+      const tailLength = pr * (11.5 + clamp(g.speed - .31, 0, .4) * 8);
+      const trail = [{ x: px, y: py, t: 0 }, ...sparkTrailRef.current.map(point => ({
+        x: point.x * w, y: py + point.age / lifetime * tailLength, t: point.age / lifetime,
+      }))];
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.shadowBlur = 0;
+      // Layered, tapered light ribbon, with a fine luminous filament inside it.
+      for (const layer of [{ width: 1.05, alpha: .065 }, { width: .43, alpha: .26 }, { width: .105, alpha: .8 }]) {
+        for (let i = trail.length - 1; i > 0; i--) {
+          const a = trail[i - 1], b = trail[i], fade = (1 - b.t) ** 1.7;
+          ctx.strokeStyle = `rgba(${spark.rgb},${fade * layer.alpha})`;
+          ctx.lineWidth = Math.max(.3, pr * layer.width * (1 - b.t) ** .85);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+      // Particles are emitted along that same historical path, not glued to the head.
+      for (let i = 0; i < 19; i++) {
+        const t = ((time * .85 + i / 19) % 1), age = t * lifetime;
+        const point = sparkTrailRef.current.find(sample => sample.age >= age);
+        if (!point || t < .07) continue;
+        const spread = Math.sin(i * 8.31) * pr * (.16 + t * 1.2);
+        const x = point.x * w + spread, y = py + t * tailLength;
+        const r = pr * (.035 + .085 * (1 - t)) * (i % 3 === 0 ? 1.3 : .75);
+        const fade = (1 - t) ** 1.4;
+        const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 4.5);
+        glow.addColorStop(0, `rgba(${spark.rgb},${fade * .65})`); glow.addColorStop(1, `rgba(${spark.rgb},0)`);
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, r * 4.5, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = fade; ctx.fillStyle = i % 3 === 0 ? spark.core : spark.rim;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      }
+      const aura = ctx.createRadialGradient(px, py, pr * .5, px, py, pr * 4.4);
+      aura.addColorStop(0, `rgba(${spark.rgb},.34)`); aura.addColorStop(.22, `rgba(${spark.rgb},.2)`);
+      aura.addColorStop(.55, `rgba(${spark.rgb},.065)`); aura.addColorStop(1, `rgba(${spark.rgb},0)`);
+      ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(px, py, pr * 4.4, 0, Math.PI * 2); ctx.fill();
+      // Draw the pearl separately from the bloom so its circular edge stays crisp.
+      ctx.globalCompositeOperation = 'source-over';
+      const body = ctx.createRadialGradient(px - pr * .22, py - pr * .28, pr * .04, px, py, pr * .88);
+      body.addColorStop(0, '#ffffff'); body.addColorStop(.4, spark.core);
+      body.addColorStop(.7, spark.rim); body.addColorStop(1, spark.deep);
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(px, py, pr * .84 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = spark.rim; ctx.lineWidth = pr * .14;
+      ctx.shadowColor = `rgb(${spark.rgb})`; ctx.shadowBlur = pr * .7;
+      ctx.beginPath(); ctx.arc(px, py, pr * 1.12 * pulse, 0, Math.PI * 2); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.strokeStyle = spark.core; ctx.lineWidth = pr * .055;
+      ctx.beginPath(); ctx.arc(px, py, pr * 1.12 * pulse, Math.PI * 1.03, Math.PI * 1.91); ctx.stroke();
+      ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .9;
+      ctx.beginPath(); ctx.ellipse(px - pr * .23, py - pr * .29, pr * .28, pr * .14, -.65, 0, Math.PI * 2); ctx.fill();
+      ctx.restore(); ctx.restore();
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw); return () => cancelAnimationFrame(frame);
