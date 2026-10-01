@@ -119,7 +119,7 @@ export default function Home() {
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
       for (let i = 0; i < 14; i++) {
         const z = (i / 14 + g.distance * .035) % 1, y = projectY(z);
-        for (const lane of [0, 1]) { ctx.strokeStyle = `rgba(46,226,255,${z * .36})`; ctx.lineWidth = 1 + z * 3; ctx.beginPath(); ctx.moveTo(laneX(lane, z, w) - w * .075 * z, y); ctx.lineTo(laneX(lane, z + .055, w) - w * .075 * (z + .055), projectY(z + .055)); ctx.stroke(); }
+        for (const lane of [0, 1]) { ctx.strokeStyle = `rgba(46,226,255,${z * .36})`; ctx.lineWidth = 1 + z * 3; ctx.beginPath(); ctx.moveTo(laneX(lane, z, w), y); ctx.lineTo(laneX(lane, z + .055, w), projectY(z + .055)); ctx.stroke(); }
       }
       for (const item of [...g.runners].sort((a, b) => a.z - b.z)) {
         if (item.z < 0) continue;
