@@ -6,6 +6,15 @@ type Runner = { kind: 'barrier' | 'orb'; lane: 0 | 1; z: number; value?: 1 | 2; 
 type RunResult = { score: number; collectionRate: number };
 type PlayerProfile = { skill: number; failStreak: number; runs: RunResult[] };
 type Difficulty = { baseSpeed: number; maxSpeed: number; acceleration: number; spawnMin: number; spawnRange: number; comboChance: number; goldChance: number };
+type SparkTheme = { rgb: string; core: string; rim: string; deep: string };
+
+const SPARK_THEMES = {
+  cyan: { rgb: '44,232,255', core: '#ffffff', rim: '#a9ffff', deep: '#008dff' },
+  magenta: { rgb: '255,62,219', core: '#fff5ff', rim: '#ffb4ef', deep: '#a900ff' },
+  gold: { rgb: '255,196,43', core: '#fffbea', rim: '#ffe99d', deep: '#ff7a00' },
+  violet: { rgb: '151,102,255', core: '#fbf8ff', rim: '#d8c5ff', deep: '#6a2dff' },
+} satisfies Record<string, SparkTheme>;
+type SparkThemeName = keyof typeof SPARK_THEMES;
 
 const DEFAULT_PROFILE: PlayerProfile = { skill: 50, failStreak: 0, runs: [] };
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -32,7 +41,7 @@ const laneX = (lane: number, z: number, width: number) => width * .5 + (lane * 2
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const profileRef = useRef<PlayerProfile>(DEFAULT_PROFILE);
-  const gameRef = useRef({ lane: 0 as 0 | 1, visualLane: 0, distance: 0, coins: 0, speed: .31, runners: [] as Runner[], spawnAt: .58, last: 0, over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, difficulty: getDifficulty(DEFAULT_PROFILE) });
+  const gameRef = useRef({ lane: 0 as 0 | 1, visualLane: 0, distance: 0, coins: 0, speed: .31, runners: [] as Runner[], spawnAt: .58, last: 0, over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, sparkTheme: 'cyan' as SparkThemeName, difficulty: getDifficulty(DEFAULT_PROFILE) });
   const [score, setScore] = useState(0);
   const [coins, setCoins] = useState(0);
   const [totalCoins, setTotalCoins] = useState(0);
@@ -42,7 +51,8 @@ export default function Home() {
 
   const reset = useCallback(() => {
     const difficulty = getDifficulty(profileRef.current);
-    gameRef.current = { lane: 0, visualLane: 0, distance: 0, coins: 0, speed: difficulty.baseSpeed, runners: [], spawnAt: difficulty.spawnMin, last: performance.now(), over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, difficulty };
+    const sparkTheme = gameRef.current.sparkTheme ?? 'cyan';
+    gameRef.current = { lane: 0, visualLane: 0, distance: 0, coins: 0, speed: difficulty.baseSpeed, runners: [], spawnAt: difficulty.spawnMin, last: performance.now(), over: false, paused: false, sparksSpawned: 0, sparksCollected: 0, sparkTheme, difficulty };
     setScore(0); setCoins(0); setOver(false); setPaused(false);
   }, []);
   const switchLane = useCallback(() => { const g = gameRef.current; if (!g.over && !g.paused) g.lane = g.lane === 0 ? 1 : 0; }, []);
@@ -143,11 +153,22 @@ export default function Home() {
           ctx.restore();
         }
       }
-      const pz = .79, px = laneX(g.visualLane, pz, w), py = projectY(pz), pr = Math.max(11, Math.min(w, h) * .025);
-      for (let i = 8; i > 0; i--) { const t = i / 8, tr = pr * (.5 - t * .035), ty = py + i * pr * .68; ctx.fillStyle = `rgba(64,235,255,${(1 - t) * .42})`; ctx.shadowColor = '#29dfff'; ctx.shadowBlur = 12; ctx.beginPath(); ctx.arc(px + Math.sin(g.distance * 2 + i) * pr * .12, ty, Math.max(1.5, tr), 0, Math.PI * 2); ctx.fill(); }
-      const aura = ctx.createRadialGradient(px, py, 0, px, py, pr * 4.8);
-      aura.addColorStop(0, '#fff'); aura.addColorStop(.16, '#7ff7ff'); aura.addColorStop(.45, 'rgba(18,213,255,.52)'); aura.addColorStop(1, 'rgba(0,164,255,0)'); ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(px, py, pr * 4.8, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f4ffff'; ctx.shadowColor = '#36edff'; ctx.shadowBlur = 24; ctx.beginPath(); ctx.arc(px, py, pr * .72, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#9dffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      const pz = .79, px = laneX(g.visualLane, pz, w), py = projectY(pz), pr = Math.max(11, Math.min(w, h) * .025), spark = SPARK_THEMES[g.sparkTheme] ?? SPARK_THEMES.cyan, pulse = 1 + Math.sin(now * .009) * .07;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const tailLength = pr * 8.3, tail = ctx.createLinearGradient(px, py, px, py + tailLength);
+      tail.addColorStop(0, `rgba(${spark.rgb},.86)`); tail.addColorStop(.42, `rgba(${spark.rgb},.34)`); tail.addColorStop(1, `rgba(${spark.rgb},0)`);
+      ctx.strokeStyle = tail; ctx.lineCap = 'round'; ctx.lineWidth = pr * .5; ctx.shadowColor = spark.rim; ctx.shadowBlur = pr * 1.25; ctx.beginPath(); ctx.moveTo(px, py + pr * .65); ctx.bezierCurveTo(px - pr * .12, py + pr * 2.4, px + pr * .16, py + pr * 5.4, px, py + tailLength); ctx.stroke();
+      for (let i = 0; i < 14; i++) {
+        const t = i / 14, ty = py + pr * (1.2 + i * .53), drift = Math.sin(g.distance * 4.4 + i * 1.71) * pr * (.12 + t * .3), radius = Math.max(1.1, pr * (.2 * (1 - t) + .045));
+        ctx.fillStyle = `rgba(${spark.rgb},${(1 - t) * .72})`; ctx.shadowColor = spark.rim; ctx.shadowBlur = pr * .65; ctx.beginPath(); ctx.arc(px + drift, ty, radius, 0, Math.PI * 2); ctx.fill();
+      }
+      const aura = ctx.createRadialGradient(px, py, 0, px, py, pr * 4.7 * pulse);
+      aura.addColorStop(0, spark.core); aura.addColorStop(.15, spark.rim); aura.addColorStop(.42, `rgba(${spark.rgb},.5)`); aura.addColorStop(1, `rgba(${spark.rgb},0)`); ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(px, py, pr * 4.7 * pulse, 0, Math.PI * 2); ctx.fill();
+      const body = ctx.createRadialGradient(px - pr * .25, py - pr * .28, 0, px, py, pr);
+      body.addColorStop(0, '#ffffff'); body.addColorStop(.34, spark.core); body.addColorStop(.72, spark.rim); body.addColorStop(1, spark.deep); ctx.fillStyle = body; ctx.shadowColor = spark.rim; ctx.shadowBlur = pr * 2; ctx.beginPath(); ctx.arc(px, py, pr * .79 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = spark.rim; ctx.lineWidth = Math.max(1.5, pr * .15); ctx.shadowBlur = pr * 1.15; ctx.beginPath(); ctx.arc(px, py, pr * 1.06 * pulse, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = `rgba(${spark.rgb},.72)`; ctx.lineWidth = Math.max(1, pr * .09); ctx.beginPath(); ctx.arc(px, py, pr * 1.33 * pulse, now * .002, now * .002 + Math.PI * 1.25); ctx.stroke();
+      ctx.fillStyle = '#ffffff'; ctx.shadowBlur = pr * .55; ctx.beginPath(); ctx.arc(px - pr * .25, py - pr * .28, pr * .17, 0, Math.PI * 2); ctx.fill(); ctx.restore(); ctx.restore();
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw); return () => cancelAnimationFrame(frame);
