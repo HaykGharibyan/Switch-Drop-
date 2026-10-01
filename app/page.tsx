@@ -131,6 +131,16 @@ export default function Home() {
       }
       const horizonY = h * .205, bottomY = h * 1.04, projectY = (z: number) => horizonY + Math.max(0, z) ** 1.65 * (bottomY - horizonY);
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      // Fine floor seams flow out of the tunnel, sharing the objects' perspective.
+      for (let i = 0; i < 9; i++) {
+        const z = (i / 9 + g.distance * .0035) % 1;
+        const half = w * (.045 + z * .185) * 1.9, fy = projectY(z);
+        const seam = ctx.createLinearGradient(w * .5 - half, fy, w * .5 + half, fy);
+        seam.addColorStop(0, 'rgba(35,168,255,0)'); seam.addColorStop(.25, `rgba(43,149,230,${z * .1})`);
+        seam.addColorStop(.75, `rgba(43,149,230,${z * .1})`); seam.addColorStop(1, 'rgba(35,168,255,0)');
+        ctx.strokeStyle = seam; ctx.lineWidth = .5 + z * .6;
+        ctx.beginPath(); ctx.moveTo(w * .5 - half, fy); ctx.lineTo(w * .5 + half, fy); ctx.stroke();
+      }
       for (let i = 0; i < 14; i++) {
         const z = (i / 14 + g.distance * .035) % 1, y = projectY(z);
         for (const lane of [0, 1]) { ctx.strokeStyle = `rgba(46,226,255,${z * .36})`; ctx.lineWidth = 1 + z * 3; ctx.beginPath(); ctx.moveTo(laneX(lane, z, w), y); ctx.lineTo(laneX(lane, z + .055, w), projectY(z + .055)); ctx.stroke(); }
@@ -139,21 +149,100 @@ export default function Home() {
         if (item.z < 0) continue;
         const x = laneX(item.lane, item.z, w), y = projectY(item.z), scale = .18 + item.z * 1.1;
         if (item.kind === 'orb') {
-          const gold = item.value === 2, r = Math.max(3, 9 * scale), glow = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
-          glow.addColorStop(0, '#fff'); glow.addColorStop(.2, gold ? '#fff3a6' : '#aff'); glow.addColorStop(.5, gold ? 'rgba(255,194,38,.55)' : 'rgba(49,235,255,.48)'); glow.addColorStop(1, gold ? 'rgba(255,170,0,0)' : 'rgba(49,235,255,0)');
-          ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, r * 4, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = gold ? '#fff0a0' : '#dfffff'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+          const gold = item.value === 2, r = Math.max(2.5, 9 * scale);
+          const rgb = gold ? '255,190,40' : '35,220,255';
+          const rim = gold ? '#fff0ab' : '#b9ffff', pearl = gold ? '#fffce9' : '#f1ffff';
+          const phase = g.distance * .18 + item.z * 11 + item.lane * 2;
+          const pulse = 1 + Math.sin(phase) * .045;
+          const aheadX = laneX(item.lane, item.z + .03, w) - x;
+          const aheadY = projectY(item.z + .03) - y;
+          ctx.save(); ctx.translate(x, y); ctx.rotate(-Math.atan2(aheadX, aheadY));
+          ctx.globalCompositeOperation = 'lighter'; ctx.shadowBlur = 0;
+
+          // An elliptical reflection on the road, with completely feathered edges.
+          ctx.save(); ctx.translate(0, r * 1.8); ctx.scale(1, .43);
+          const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 3.8);
+          pool.addColorStop(0, `rgba(${rgb},.34)`);
+          pool.addColorStop(.32, `rgba(${rgb},.17)`);
+          pool.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = pool; ctx.beginPath(); ctx.arc(0, 0, r * 3.8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+
+          // The light flows ahead of the collectible, following its lane's perspective.
+          const reach = r * (6.8 + g.speed * 3);
+          const beam = ctx.createLinearGradient(0, r * .3, 0, reach);
+          beam.addColorStop(0, `rgba(${rgb},.4)`);
+          beam.addColorStop(.3, `rgba(${rgb},.16)`);
+          beam.addColorStop(.72, `rgba(${rgb},.035)`);
+          beam.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = beam;
+          ctx.beginPath(); ctx.moveTo(-r * .7, r * .4);
+          ctx.bezierCurveTo(-r * 1.25, r * 2, -r * .3, reach * .7, 0, reach);
+          ctx.bezierCurveTo(r * .3, reach * .7, r * 1.25, r * 2, r * .7, r * .4);
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = beam; ctx.lineWidth = Math.max(.5, r * .16); ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(0, r * .8); ctx.lineTo(0, reach * .86); ctx.stroke();
+          for (let p = 0; p < 7; p++) {
+            const t = (g.distance * .045 + p / 7 + item.lane * .23) % 1;
+            const dx = Math.sin(p * 4.73) * r * (.18 + t * .65), dy = r * 1.2 + t * (reach - r * 1.2);
+            const radius = Math.max(.35, r * .12 * (1 - t));
+            ctx.globalAlpha = (1 - t) ** 2 * .75;
+            ctx.fillStyle = rim; ctx.shadowColor = `rgb(${rgb})`; ctx.shadowBlur = r * .55;
+            ctx.beginPath(); ctx.arc(dx, dy, radius, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+          const halo = ctx.createRadialGradient(0, 0, r * .5, 0, 0, r * 4.2);
+          halo.addColorStop(0, `rgba(${rgb},.48)`);
+          halo.addColorStop(.25, `rgba(${rgb},.22)`);
+          halo.addColorStop(.6, `rgba(${rgb},.055)`);
+          halo.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, r * 4.2, 0, Math.PI * 2); ctx.fill();
+
+          // A luminous pearl and a separate fine rim retain detail inside the bloom.
+          ctx.globalCompositeOperation = 'source-over';
+          const core = ctx.createRadialGradient(-r * .23, -r * .28, 0, 0, 0, r);
+          core.addColorStop(0, '#ffffff'); core.addColorStop(.36, pearl);
+          core.addColorStop(.7, rim); core.addColorStop(1, gold ? '#efa320' : '#16a8e6');
+          ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0, 0, r * .84 * pulse, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = rim; ctx.lineWidth = Math.max(.65, r * .11);
+          ctx.shadowColor = `rgb(${rgb})`; ctx.shadowBlur = r * .75;
+          ctx.beginPath(); ctx.arc(0, 0, r * 1.04 * pulse, 0, Math.PI * 2); ctx.stroke();
+          ctx.shadowBlur = 0; ctx.strokeStyle = pearl; ctx.lineWidth = Math.max(.4, r * .065);
+          ctx.beginPath(); ctx.arc(0, 0, r * 1.04 * pulse, Math.PI * 1.05, Math.PI * 1.85); ctx.stroke();
+          ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .8;
+          ctx.beginPath(); ctx.ellipse(-r * .25, -r * .28, r * .24, r * .13, -.6, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
         } else {
-          const bw = 40 * scale, bh = 44 * scale, bevel = 10 * scale, depth = 7 * scale;
+          const bw = 40 * scale, bh = 44 * scale, bevel = 4 * scale, depth = 8 * scale;
           const path = (points: [number, number][]) => { ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]); for (let p = 1; p < points.length; p++) ctx.lineTo(points[p][0], points[p][1]); ctx.closePath(); };
-          ctx.save(); ctx.shadowColor = '#ff174f'; ctx.shadowBlur = 30 * scale;
+          ctx.save();
+          // Reflected red light anchors the obstacle to the polished track.
+          ctx.save(); ctx.translate(x, y + bh * 1.17); ctx.scale(1, .75);
+          const reflection = ctx.createRadialGradient(0, 0, 0, 0, 0, bw * 1.9);
+          reflection.addColorStop(0, 'rgba(255,28,54,.32)'); reflection.addColorStop(.38, 'rgba(255,15,44,.14)'); reflection.addColorStop(1, 'rgba(255,12,40,0)');
+          ctx.fillStyle = reflection; ctx.beginPath(); ctx.arc(0, 0, bw * 1.9, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+          ctx.globalCompositeOperation = 'source-over'; ctx.shadowColor = '#ff183e'; ctx.shadowBlur = 14 * scale;
           path([[x + bw - bevel, y - bh], [x + bw, y - bh + bevel], [x + bw + depth, y - bh + bevel + depth], [x + bw + depth, y + bh - bevel], [x + bw, y + bh], [x + bw, y - bh + bevel]]); ctx.fillStyle = '#570021'; ctx.fill();
           path([[x - bw + bevel, y - bh], [x + bw - bevel, y - bh], [x + bw, y - bh + bevel], [x - bw, y - bh + bevel], [x - bw + depth, y - bh - depth], [x + bw - bevel + depth, y - bh - depth]]); ctx.fillStyle = '#ff5476'; ctx.fill();
           const face = [[x - bw + bevel, y - bh], [x + bw - bevel, y - bh], [x + bw, y - bh + bevel], [x + bw, y + bh - bevel], [x + bw - bevel, y + bh], [x - bw + bevel, y + bh], [x - bw, y + bh - bevel], [x - bw, y - bh + bevel]] as [number, number][];
-          const grad = ctx.createLinearGradient(x - bw, y - bh, x + bw, y + bh); grad.addColorStop(0, '#ff547d'); grad.addColorStop(.38, '#c00b45'); grad.addColorStop(1, '#39001f'); path(face); ctx.fillStyle = grad; ctx.fill(); ctx.strokeStyle = '#ff99ad'; ctx.lineWidth = Math.max(1, 2.4 * scale); ctx.stroke();
+          const grad = ctx.createLinearGradient(x - bw, y - bh, x + bw, y + bh); grad.addColorStop(0, '#791729'); grad.addColorStop(.38, '#270b1c'); grad.addColorStop(1, '#460b1b'); path(face); ctx.fillStyle = grad; ctx.fill(); ctx.strokeStyle = '#ff5365'; ctx.lineWidth = Math.max(1, 2.4 * scale); ctx.stroke();
           const inner = face.map(([px2, py2]) => [x + (px2 - x) * .78, y + (py2 - y) * .72] as [number, number]); path(inner); ctx.strokeStyle = '#ff3f72'; ctx.lineWidth = Math.max(1, 1.5 * scale); ctx.stroke();
           const core = ctx.createRadialGradient(x, y, 0, x, y, bw * .72); core.addColorStop(0, 'rgba(255,84,140,.42)'); core.addColorStop(1, 'rgba(92,0,38,0)'); ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, bw * .72, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = '#ffd5df'; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, 6 * scale); ctx.shadowColor = '#ff356a'; ctx.shadowBlur = 12 * scale; ctx.beginPath(); ctx.moveTo(x - bw * .34, y - bh * .31); ctx.lineTo(x + bw * .34, y + bh * .31); ctx.moveTo(x + bw * .34, y - bh * .31); ctx.lineTo(x - bw * .34, y + bh * .31); ctx.stroke();
-          ctx.fillStyle = '#fff2f5'; for (const [cx, cy] of [[x - bw + bevel, y - bh + bevel], [x + bw - bevel, y - bh + bevel], [x - bw + bevel, y + bh - bevel], [x + bw - bevel, y + bh - bevel]]) { ctx.beginPath(); ctx.arc(cx, cy, Math.max(1, 2.2 * scale), 0, Math.PI * 2); ctx.fill(); }
+          // Illuminated diagonal hazard strips frame the dark, inset face.
+          ctx.shadowBlur = 0;
+          for (const stripY of [y - bh + 4 * scale, y + bh - 12 * scale]) {
+            ctx.fillStyle = '#561220'; ctx.fillRect(x - bw + 3 * scale, stripY, bw * 2 - 6 * scale, 8 * scale);
+            ctx.save(); ctx.beginPath(); ctx.rect(x - bw + 3 * scale, stripY, bw * 2 - 6 * scale, 8 * scale); ctx.clip();
+            ctx.fillStyle = '#ff9a9e'; ctx.shadowColor = '#ff293e'; ctx.shadowBlur = 5 * scale;
+            for (let stripe = -1; stripe < 9; stripe++) {
+              const sx = x - bw + stripe * 12 * scale;
+              path([[sx, stripY + 8 * scale], [sx + 6 * scale, stripY], [sx + 13 * scale, stripY], [sx + 7 * scale, stripY + 8 * scale]]); ctx.fill();
+            }
+            ctx.restore();
+          }
+          ctx.strokeStyle = '#ff596c'; ctx.lineCap = 'square'; ctx.lineWidth = Math.max(2, 6.5 * scale); ctx.shadowColor = '#ff2444'; ctx.shadowBlur = 12 * scale; ctx.beginPath(); ctx.moveTo(x - bw * .32, y - bh * .29); ctx.lineTo(x + bw * .32, y + bh * .29); ctx.moveTo(x + bw * .32, y - bh * .29); ctx.lineTo(x - bw * .32, y + bh * .29); ctx.stroke();
+          ctx.shadowBlur = 0; ctx.strokeStyle = '#ffb0ae'; ctx.lineWidth = Math.max(.6, scale);
+          ctx.beginPath(); ctx.moveTo(x - bw + bevel, y - bh); ctx.lineTo(x + bw - bevel, y - bh); ctx.moveTo(x - bw, y - bh + bevel); ctx.lineTo(x - bw, y + bh - bevel); ctx.stroke();
           ctx.restore();
         }
       }
@@ -224,7 +313,7 @@ export default function Home() {
   }, []);
 
   return <main className="game-shell" onPointerDown={switchLane}>
-    <div className="game-backdrop" /><div className="game-vignette" />
+    <div className="game-backdrop" /><div className="center-glow" aria-hidden="true" /><div className="game-vignette" />
     <canvas ref={canvasRef} className="game-canvas" aria-label="Switch Drop game field" />
     <header className="hud" aria-live="polite"><div className="score-block"><strong>{score}</strong></div></header>
     <div className="total-coins" aria-label={`Total coins ${totalCoins}`}><span className="coin-glyph" aria-hidden="true" /><strong>{totalCoins}</strong></div>
