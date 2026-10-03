@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   requestShopPurchase,
   SHOP_PRODUCTS,
@@ -25,7 +25,25 @@ type Difficulty = {
   comboChance: number;
   goldChance: number;
 };
-type SparkTheme = { rgb: string; core: string; rim: string; deep: string };
+type SparkTheme = {
+  rgb: string;
+  core: string;
+  rim: string;
+  deep: string;
+  effect?:
+    | "rainbow"
+    | "aurora"
+    | "supernova"
+    | "plasma"
+    | "dark-matter"
+    | "solar-eclipse"
+    | "ice-crystal"
+    | "tiger-flame"
+    | "neon-lightning"
+    | "toxic-reactor"
+    | "silver-comet"
+    | "cosmic-nebula";
+};
 type DailyRewardStatus = {
   serverNow: number;
   claimedDay: number;
@@ -39,24 +57,333 @@ type DailyRewardStatus = {
 type ClaimedReward = { amount: number; day: number };
 
 const DAILY_REWARDS = [100, 150, 200, 250, 300, 350, 550] as const;
+const COMMON_SKINS = [
+  "cyan",
+  "red",
+  "lime",
+  "violet",
+  "blue",
+  "yellow",
+  "pink",
+  "green",
+  "orange",
+  "purple",
+  "white",
+  "teal",
+  "crimson",
+  "amber",
+  "magenta",
+  "sapphire",
+] as const;
+const SPECIAL_SKINS = [
+  "rainbow",
+  "aurora",
+  "supernova",
+  "plasma",
+  "dark-matter",
+  "solar-eclipse",
+  "ice-crystal",
+  "tiger-flame",
+  "neon-lightning",
+  "toxic-reactor",
+  "silver-comet",
+  "cosmic-nebula",
+] as const;
+const IMPLEMENTED_SKINS = [...COMMON_SKINS, ...SPECIAL_SKINS] as const;
+const CUSTOMIZE_SLOTS = Array.from({ length: 28 }, (_, index) => ({
+  id: index + 1,
+  rare: index >= 16,
+  price: index === 0 ? 0 : index < 16 ? 250 : 1000,
+  theme:
+    index < COMMON_SKINS.length
+      ? COMMON_SKINS[index]
+      : SPECIAL_SKINS[index - COMMON_SKINS.length] ?? null,
+}));
 
 const SPARK_THEMES = {
   cyan: { rgb: "44,232,255", core: "#ffffff", rim: "#a9ffff", deep: "#008dff" },
-  magenta: {
-    rgb: "255,62,219",
+  blue: { rgb: "36,124,255", core: "#ffffff", rim: "#b8d7ff", deep: "#1449ff" },
+  teal: { rgb: "0,205,181", core: "#ffffff", rim: "#a4fff1", deep: "#008d7c" },
+  green: { rgb: "20,230,111", core: "#ffffff", rim: "#b8ffd2", deep: "#00a943" },
+  lime: { rgb: "155,255,26", core: "#ffffed", rim: "#e7ff9b", deep: "#65c900" },
+  yellow: { rgb: "255,225,31", core: "#fffef1", rim: "#fff59d", deep: "#d99a00" },
+  orange: { rgb: "255,122,24", core: "#fff8eb", rim: "#ffc383", deep: "#e13a00" },
+  red: { rgb: "255,36,61", core: "#fffafa", rim: "#ff9aa7", deep: "#f00024" },
+  coral: { rgb: "255,98,112", core: "#fffafa", rim: "#ffd0d0", deep: "#e23f58" },
+  pink: { rgb: "255,47,171", core: "#fff7fd", rim: "#fface0", deep: "#d6007a" },
+  rainbow: {
+    rgb: "255,92,188",
+    core: "#ffffff",
+    rim: "#ffd8f5",
+    deep: "#a72dff",
+    effect: "rainbow",
+  },
+  aurora: {
+    rgb: "47,255,201",
+    core: "#ffffff",
+    rim: "#a9ffe9",
+    deep: "#7c48ff",
+    effect: "aurora",
+  },
+  supernova: {
+    rgb: "255,179,44",
+    core: "#ffffff",
+    rim: "#fff0a3",
+    deep: "#ff391f",
+    effect: "supernova",
+  },
+  plasma: {
+    rgb: "255,48,221",
+    core: "#ffffff",
+    rim: "#ffc0f6",
+    deep: "#7838ff",
+    effect: "plasma",
+  },
+  "dark-matter": {
+    rgb: "176,42,255",
+    core: "#16001f",
+    rim: "#ff79e7",
+    deep: "#35106e",
+    effect: "dark-matter",
+  },
+  "solar-eclipse": {
+    rgb: "255,183,35",
+    core: "#07030b",
+    rim: "#ffe07a",
+    deep: "#e35b00",
+    effect: "solar-eclipse",
+  },
+  "ice-crystal": {
+    rgb: "148,226,255",
+    core: "#ffffff",
+    rim: "#dffaff",
+    deep: "#3a8dff",
+    effect: "ice-crystal",
+  },
+  "tiger-flame": {
+    rgb: "255,119,20",
+    core: "#fff4d8",
+    rim: "#ffc66e",
+    deep: "#4b1100",
+    effect: "tiger-flame",
+  },
+  "neon-lightning": {
+    rgb: "72,177,255",
+    core: "#ffffff",
+    rim: "#c8edff",
+    deep: "#3d35ff",
+    effect: "neon-lightning",
+  },
+  "toxic-reactor": {
+    rgb: "115,255,32",
+    core: "#f5ffd8",
+    rim: "#d8ff87",
+    deep: "#148900",
+    effect: "toxic-reactor",
+  },
+  "silver-comet": {
+    rgb: "220,238,255",
+    core: "#ffffff",
+    rim: "#f4fbff",
+    deep: "#8ca9c7",
+    effect: "silver-comet",
+  },
+  "cosmic-nebula": {
+    rgb: "153,77,255",
     core: "#fff5ff",
-    rim: "#ffb4ef",
-    deep: "#a900ff",
+    rim: "#e3b9ff",
+    deep: "#2545c9",
+    effect: "cosmic-nebula",
+  },
+  magenta: {
+    rgb: "255,34,239",
+    core: "#fff5ff",
+    rim: "#ffa7f7",
+    deep: "#bd00d8",
   },
   gold: { rgb: "255,196,43", core: "#fffbea", rim: "#ffe99d", deep: "#ff7a00" },
   violet: {
-    rgb: "151,102,255",
+    rgb: "146,80,255",
     core: "#fbf8ff",
-    rim: "#d8c5ff",
-    deep: "#6a2dff",
+    rim: "#d0b4ff",
+    deep: "#6323f4",
   },
+  purple: { rgb: "192,43,255", core: "#fff8ff", rim: "#e7a7ff", deep: "#7910cf" },
+  white: { rgb: "239,255,255", core: "#ffffff", rim: "#ffffff", deep: "#8fcfff" },
+  crimson: { rgb: "184,0,63", core: "#fff5f8", rim: "#ff8eb1", deep: "#740020" },
+  amber: { rgb: "255,176,0", core: "#fffbea", rim: "#ffe18a", deep: "#cf6900" },
+  sapphire: { rgb: "33,64,201", core: "#f5f7ff", rim: "#9cb7ff", deep: "#111f78" },
+  ice: { rgb: "126,214,255", core: "#ffffff", rim: "#d6f6ff", deep: "#258cff" },
+  mint: { rgb: "114,255,219", core: "#ffffff", rim: "#d0fff2", deep: "#00b889" },
 } satisfies Record<string, SparkTheme>;
 type SparkThemeName = keyof typeof SPARK_THEMES;
+const CUSTOMIZE_HUES: Record<string, number> = {
+  cyan: 147,
+  blue: 176,
+  teal: 131,
+  green: 102,
+  lime: 53,
+  yellow: 13,
+  orange: 348,
+  red: 315,
+  coral: 314,
+  pink: 288,
+  magenta: 268,
+  violet: 219,
+  purple: 241,
+  white: 0,
+  crimson: 320,
+  amber: 1,
+  sapphire: 190,
+  rainbow: 268,
+  aurora: 124,
+  supernova: 355,
+  plasma: 265,
+  "dark-matter": 238,
+  "solar-eclipse": 2,
+  "ice-crystal": 158,
+  "tiger-flame": 345,
+  "neon-lightning": 178,
+  "toxic-reactor": 72,
+  "silver-comet": 0,
+  "cosmic-nebula": 224,
+  ice: 159,
+  mint: 124,
+};
+const CUSTOMIZE_BRIGHTNESS: Record<string, number> = {
+  cyan: 1.18,
+  red: 1.08,
+  lime: 1.24,
+  violet: 1.08,
+  blue: 1.05,
+  yellow: 1.28,
+  pink: 1.12,
+  green: 1.13,
+  orange: 1.15,
+  purple: 1.02,
+  white: 1.35,
+  teal: 1.06,
+  crimson: 0.88,
+  amber: 1.14,
+  magenta: 1.1,
+  sapphire: 0.82,
+  rainbow: 1.16,
+  aurora: 1.12,
+  supernova: 1.3,
+  plasma: 1.14,
+  "dark-matter": 0.72,
+  "solar-eclipse": 0.9,
+  "ice-crystal": 1.38,
+  "tiger-flame": 1.18,
+  "neon-lightning": 1.28,
+  "toxic-reactor": 1.18,
+  "silver-comet": 1.32,
+  "cosmic-nebula": 0.98,
+};
+const customizeStyle = (theme: string | null): CSSProperties => {
+  const spark = SPARK_THEMES[theme as SparkThemeName] ?? SPARK_THEMES.cyan;
+  const color = `rgb(${spark.rgb})`;
+  return {
+    "--customize-hue": `${CUSTOMIZE_HUES[theme || "cyan"] ?? 0}deg`,
+    "--customize-saturation":
+      theme === "white" || theme === "silver-comet" ? "0" : "6.5",
+    "--customize-brightness": String(
+      CUSTOMIZE_BRIGHTNESS[theme || "cyan"] ?? 1.15,
+    ),
+    "--customize-color": color,
+    "--customize-glow": color,
+    "--customize-deep": color,
+  } as CSSProperties;
+};
+
+const hueRgb = (hue: number) => {
+  const angle = ((hue % 360) + 360) % 360;
+  const sector = angle / 60;
+  const x = 1 - Math.abs((sector % 2) - 1);
+  const [r, g, b] =
+    sector < 1
+      ? [1, x, 0]
+      : sector < 2
+        ? [x, 1, 0]
+        : sector < 3
+          ? [0, 1, x]
+          : sector < 4
+            ? [0, x, 1]
+            : sector < 5
+              ? [x, 0, 1]
+              : [1, 0, x];
+  return [r, g, b].map((value) => Math.round(value * 255)).join(",");
+};
+const animatedSparkTheme = (theme: SparkTheme, time: number): SparkTheme => {
+  if (!theme.effect) return theme;
+  if (theme.effect === "rainbow") {
+    const hue = (time * 82) % 360;
+    return {
+      rgb: hueRgb(hue),
+      core: "#ffffff",
+      rim: `hsl(${hue} 100% 82%)`,
+      deep: `hsl(${(hue + 24) % 360} 100% 55%)`,
+      effect: "rainbow",
+    };
+  }
+  if (theme.effect === "aurora") {
+    const hue = 175 + Math.sin(time * 1.8) * 78;
+    return {
+      rgb: hueRgb(hue),
+      core: "#ffffff",
+      rim: `hsl(${hue} 100% 82%)`,
+      deep: `hsl(${(hue + 72) % 360} 100% 57%)`,
+      effect: "aurora",
+    };
+  }
+  if (theme.effect === "supernova") {
+    const flare = (Math.sin(time * 5.2) + 1) * 0.5;
+    return {
+      rgb: `255,${Math.round(105 + flare * 116)},${Math.round(18 + flare * 52)}`,
+      core: "#ffffff",
+      rim: flare > 0.55 ? "#fffbd7" : "#ffd060",
+      deep: flare > 0.55 ? "#ff7a19" : "#ef192a",
+      effect: "supernova",
+    };
+  }
+  if (theme.effect === "plasma") {
+    const hue = 302 + Math.sin(time * 3.8) * 31;
+    return { rgb: hueRgb(hue), core: "#ffffff", rim: `hsl(${hue} 100% 84%)`, deep: `hsl(${(hue + 54) % 360} 100% 58%)`, effect: "plasma" };
+  }
+  if (theme.effect === "dark-matter") {
+    const hue = 281 + Math.sin(time * 1.7) * 18;
+    return { rgb: hueRgb(hue), core: "#120018", rim: `hsl(${hue + 24} 100% 72%)`, deep: "#2a0757", effect: theme.effect };
+  }
+  if (theme.effect === "solar-eclipse") {
+    const heat = (Math.sin(time * 4.1) + 1) * 0.5;
+    return { rgb: `255,${Math.round(143 + heat * 65)},${Math.round(14 + heat * 25)}`, core: "#050207", rim: "#ffe27a", deep: "#d74700", effect: theme.effect };
+  }
+  if (theme.effect === "ice-crystal") {
+    const hue = 196 + Math.sin(time * 2.4) * 10;
+    return { rgb: hueRgb(hue), core: "#ffffff", rim: "#e7fbff", deep: "#3d8dff", effect: theme.effect };
+  }
+  if (theme.effect === "tiger-flame") {
+    const heat = (Math.sin(time * 7.2) + 1) * 0.5;
+    return { rgb: `255,${Math.round(76 + heat * 79)},${Math.round(4 + heat * 20)}`, core: "#fff4d6", rim: "#ffc056", deep: "#541000", effect: theme.effect };
+  }
+  if (theme.effect === "neon-lightning") {
+    const flash = Math.sin(time * 15) > 0.72 ? 28 : 0;
+    return { rgb: `${72 + flash},${177 + Math.round(flash * 0.7)},255`, core: "#ffffff", rim: "#d7f4ff", deep: "#3549ff", effect: theme.effect };
+  }
+  if (theme.effect === "toxic-reactor") {
+    const hue = 96 + Math.sin(time * 3.2) * 11;
+    return { rgb: hueRgb(hue), core: "#f8ffdc", rim: "#dcff89", deep: "#118700", effect: theme.effect };
+  }
+  if (theme.effect === "silver-comet") {
+    const blue = Math.round(238 + (Math.sin(time * 2.7) + 1) * 8);
+    return { rgb: `${blue - 12},${blue},255`, core: "#ffffff", rim: "#f7fcff", deep: "#88a9c9", effect: theme.effect };
+  }
+  const hue = 258 + Math.sin(time * 1.25) * 34;
+  return { rgb: hueRgb(hue), core: "#fff7ff", rim: `hsl(${hue} 100% 86%)`, deep: `hsl(${(hue + 45) % 360} 78% 45%)`, effect: "cosmic-nebula" };
+};
+
+const skinLabel = (theme: string | null) =>
+  (theme ?? "cyan").replace(/-/g, " ").toUpperCase();
 
 const DEFAULT_PROFILE: PlayerProfile = { skill: 50, failStreak: 0, runs: [] };
 const clamp = (value: number, min: number, max: number) =>
@@ -70,7 +397,11 @@ const formatCountdown = (seconds: number) => {
     .join(":");
 };
 const clearStaleModalLocation = () => {
-  if (!["#shop", "#daily", "#daily-reward"].includes(window.location.hash))
+  if (
+    !["#shop", "#customize", "#daily", "#daily-reward", "#settings"].includes(
+      window.location.hash,
+    )
+  )
     return;
   window.history.replaceState(
     null,
@@ -140,6 +471,22 @@ export default function Home() {
   const [newBest, setNewBest] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const shopHistoryRef = useRef(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsHistoryRef = useRef(false);
+  const [settingsPrivacyOpen, setSettingsPrivacyOpen] = useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const customizeHistoryRef = useRef(false);
+  const [customizeSelection, setCustomizeSelection] = useState(0);
+  const [customizeOwned, setCustomizeOwned] = useState<boolean[]>([
+    true,
+    false,
+    ...Array(26).fill(false),
+  ]);
+  const [equippedSkin, setEquippedSkin] = useState<SparkThemeName>("cyan");
+  const [customizeNotice, setCustomizeNotice] = useState("");
+  const purchaseSoundRef = useRef<HTMLAudioElement | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
   const [dailyStatus, setDailyStatus] = useState<DailyRewardStatus | null>(null);
   const [dailyLoading, setDailyLoading] = useState(false);
@@ -195,9 +542,109 @@ export default function Home() {
     setShopOpen(false);
     if (window.history.state?.switchDropShop) window.history.back();
   }, []);
+  const openSettings = useCallback(() => {
+    if (settingsHistoryRef.current) return;
+    clearStaleModalLocation();
+    settingsHistoryRef.current = true;
+    window.history.pushState({ switchDropSettings: true }, "", "#settings");
+    setSettingsPrivacyOpen(false);
+    setSettingsOpen(true);
+  }, []);
+  const closeSettings = useCallback(() => {
+    if (!settingsHistoryRef.current) return;
+    settingsHistoryRef.current = false;
+    setSettingsPrivacyOpen(false);
+    setSettingsOpen(false);
+    if (window.history.state?.switchDropSettings) window.history.back();
+  }, []);
+  const toggleMusic = useCallback(() => {
+    setMusicEnabled((current) => {
+      const next = !current;
+      localStorage.setItem("switch-drop-music-enabled", String(next));
+      return next;
+    });
+  }, []);
+  const toggleSound = useCallback(() => {
+    setSoundEnabled((current) => {
+      const next = !current;
+      localStorage.setItem("switch-drop-sound-enabled", String(next));
+      return next;
+    });
+  }, []);
   const handleShopPurchase = useCallback((productId: ShopProductId) => {
     requestShopPurchase(productId);
   }, []);
+  const openCustomize = useCallback(() => {
+    if (customizeHistoryRef.current) return;
+    clearStaleModalLocation();
+    customizeHistoryRef.current = true;
+    window.history.pushState(
+      { switchDropCustomize: true },
+      "",
+      "#customize",
+    );
+    const equippedIndex = CUSTOMIZE_SLOTS.findIndex(
+      (slot) => slot.theme === equippedSkin,
+    );
+    setCustomizeSelection(equippedIndex >= 0 ? equippedIndex : 0);
+    setCustomizeNotice("");
+    setCustomizeOpen(true);
+  }, [equippedSkin]);
+  const closeCustomize = useCallback(() => {
+    if (!customizeHistoryRef.current) return;
+    customizeHistoryRef.current = false;
+    setCustomizeOpen(false);
+    if (window.history.state?.switchDropCustomize) window.history.back();
+  }, []);
+  const handleCustomizeSlot = useCallback(
+    (slot: (typeof CUSTOMIZE_SLOTS)[number]) => {
+      const owned = customizeOwned[slot.id - 1] || slot.id === 1;
+      if (owned) {
+        setCustomizeSelection(slot.id - 1);
+        const nextSkin = slot.theme as SparkThemeName;
+        gameRef.current.sparkTheme = nextSkin;
+        setEquippedSkin(nextSkin);
+        localStorage.setItem("switch-drop-equipped-skin", nextSkin);
+        setCustomizeNotice("");
+        return;
+      }
+      if (!slot.theme) {
+        setCustomizeNotice("COMING SOON");
+        return;
+      }
+    if (totalCoins < slot.price) {
+      customizeHistoryRef.current = false;
+      setCustomizeOpen(false);
+      setCustomizeNotice("");
+      openShop();
+      return;
+    }
+    const nextOwned = customizeOwned.map((value, index) =>
+      index === slot.id - 1 ? true : value,
+    );
+    setCustomizeOwned(nextOwned);
+    localStorage.setItem("switch-drop-owned-skins", JSON.stringify(nextOwned));
+    setTotalCoins((current) => {
+      const next = current - slot.price;
+      localStorage.setItem("switch-drop-total-coins", String(next));
+      return next;
+    });
+    setCustomizeSelection(slot.id - 1);
+    const nextSkin = slot.theme as SparkThemeName;
+    gameRef.current.sparkTheme = nextSkin;
+    setEquippedSkin(nextSkin);
+    localStorage.setItem("switch-drop-equipped-skin", nextSkin);
+    setCustomizeNotice(`${skinLabel(slot.theme)} SPARK UNLOCKED`);
+    if (soundEnabled) {
+      const sound =
+        purchaseSoundRef.current ?? new Audio("/skin-purchase.mp3?v=1");
+      purchaseSoundRef.current = sound;
+      sound.currentTime = 0;
+      void sound.play().catch(() => {
+        // Some mobile browsers may still mute audio at the system level.
+      });
+    }
+  }, [customizeOwned, openShop, soundEnabled, totalCoins]);
   const applyDailyStatus = useCallback((status: DailyRewardStatus) => {
     dailyClockRef.current = {
       serverNow: status.serverNow,
@@ -311,6 +758,39 @@ export default function Home() {
       setTotalCoins(
         Number(localStorage.getItem("switch-drop-total-coins") || 0),
       );
+      setMusicEnabled(
+        localStorage.getItem("switch-drop-music-enabled") !== "false",
+      );
+      setSoundEnabled(
+        localStorage.getItem("switch-drop-sound-enabled") !== "false",
+      );
+      let restoredOwned = [true, false, ...Array(26).fill(false)];
+      try {
+        const savedOwned = JSON.parse(
+          localStorage.getItem("switch-drop-owned-skins") || "null",
+        );
+        if (Array.isArray(savedOwned)) {
+          restoredOwned = restoredOwned.map((value, index) =>
+            index === 0 ? true : Boolean(savedOwned[index] ?? value),
+          );
+        }
+      } catch {
+        restoredOwned = [true, false, ...Array(26).fill(false)];
+      }
+      setCustomizeOwned(restoredOwned);
+      const savedEquipped = localStorage.getItem("switch-drop-equipped-skin");
+      const restoredSkin: SparkThemeName =
+        IMPLEMENTED_SKINS.includes(
+          savedEquipped as (typeof IMPLEMENTED_SKINS)[number],
+        )
+          ? (savedEquipped as SparkThemeName)
+          : "cyan";
+      gameRef.current.sparkTheme = restoredSkin;
+      setEquippedSkin(restoredSkin);
+      const restoredIndex = CUSTOMIZE_SLOTS.findIndex(
+        (slot) => slot.theme === restoredSkin,
+      );
+      setCustomizeSelection(restoredIndex >= 0 ? restoredIndex : 0);
       try {
         const saved = JSON.parse(
           localStorage.getItem("switch-drop-profile") || "null",
@@ -334,14 +814,21 @@ export default function Home() {
       const state = event.state as
         | {
             switchDropShop?: boolean;
+            switchDropSettings?: boolean;
+            switchDropCustomize?: boolean;
             switchDropDaily?: boolean;
             switchDropReward?: boolean;
           }
         | null;
       shopHistoryRef.current = Boolean(state?.switchDropShop);
+      settingsHistoryRef.current = Boolean(state?.switchDropSettings);
+      customizeHistoryRef.current = Boolean(state?.switchDropCustomize);
       dailyHistoryRef.current = Boolean(state?.switchDropDaily);
       rewardHistoryRef.current = Boolean(state?.switchDropReward);
       setShopOpen(Boolean(state?.switchDropShop));
+      setSettingsOpen(Boolean(state?.switchDropSettings));
+      setSettingsPrivacyOpen(false);
+      setCustomizeOpen(Boolean(state?.switchDropCustomize));
       setDailyOpen(Boolean(state?.switchDropDaily));
       if (!state?.switchDropReward) setClaimedReward(null);
     };
@@ -349,6 +836,8 @@ export default function Home() {
       if (event.key !== "Escape") return;
       if (rewardHistoryRef.current) closeRewardPopup();
       else if (dailyHistoryRef.current) closeDaily();
+      else if (customizeHistoryRef.current) closeCustomize();
+      else if (settingsHistoryRef.current) closeSettings();
       else closeShop();
     };
     window.addEventListener("popstate", handlePopState);
@@ -357,7 +846,7 @@ export default function Home() {
       window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [closeDaily, closeRewardPopup, closeShop]);
+  }, [closeCustomize, closeDaily, closeRewardPopup, closeSettings, closeShop]);
 
   useEffect(() => {
     if (!dailyOpen || !dailyStatus || dailyStatus.canClaim) return;
@@ -913,7 +1402,7 @@ export default function Home() {
         px = laneX(g.visualLane, pz),
         py = projectY(pz);
       const pr = Math.max(12, Math.min(w, h) * 0.033),
-        spark = SPARK_THEMES[g.sparkTheme] ?? SPARK_THEMES.cyan;
+        sparkBase = SPARK_THEMES[g.sparkTheme] ?? SPARK_THEMES.rainbow;
       const lifetime = 0.72;
       // Remember the actual path: the wake stays behind when the head switches lanes.
       if (!g.paused && !g.over) {
@@ -945,8 +1434,23 @@ export default function Home() {
           trailPoints.length = maxTrailSamples;
         }
       }
-      const time = sparkClockRef.current,
-        pulse = 1 + Math.sin(time * 5) * 0.025;
+      const time = sparkClockRef.current;
+      const spark = animatedSparkTheme(sparkBase, time);
+      const sparkAtTrailAge = (age: number) =>
+        animatedSparkTheme(sparkBase, time - age * 1.6);
+      const effectPulse =
+        sparkBase.effect === "supernova"
+          ? 1 + (Math.sin(time * 5.2) + 1) * 0.045
+          : sparkBase.effect === "plasma"
+            ? 1 + Math.sin(time * 9.4) * 0.025
+            : sparkBase.effect === "solar-eclipse"
+              ? 1 + Math.sin(time * 4.1) * 0.045
+              : sparkBase.effect === "toxic-reactor"
+                ? 1 + Math.sin(time * 3.2) * 0.04
+                : sparkBase.effect === "neon-lightning"
+                  ? 1 + Math.max(0, Math.sin(time * 15)) * 0.035
+            : 1;
+      const pulse = (1 + Math.sin(time * 5) * 0.025) * effectPulse;
       const tailLength = pr * (11.5 + clamp(g.speed - 0.31, 0, 0.4) * 8);
       const trail = [
         { x: px, y: py, t: 0 },
@@ -971,8 +1475,9 @@ export default function Home() {
         for (let i = trail.length - 1; i > 0; i -= trailStep) {
           const a = trail[Math.max(0, i - trailStep)],
             b = trail[i],
-            fade = (1 - b.t) ** 1.7;
-          ctx.strokeStyle = `rgba(${spark.rgb},${fade * layer.alpha})`;
+            fade = (1 - b.t) ** 1.7,
+            trailSpark = sparkAtTrailAge(b.t);
+          ctx.strokeStyle = `rgba(${trailSpark.rgb},${fade * layer.alpha})`;
           ctx.lineWidth = Math.max(0.3, pr * layer.width * (1 - b.t) ** 0.85);
           ctx.beginPath();
           ctx.moveTo(a.x, a.y);
@@ -991,15 +1496,16 @@ export default function Home() {
           y = py + t * tailLength;
         const r = pr * (0.035 + 0.085 * (1 - t)) * (i % 3 === 0 ? 1.3 : 0.75);
         const fade = (1 - t) ** 1.4;
+        const particleSpark = sparkAtTrailAge(t);
         const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 4.5);
-        glow.addColorStop(0, `rgba(${spark.rgb},${fade * 0.65})`);
-        glow.addColorStop(1, `rgba(${spark.rgb},0)`);
+        glow.addColorStop(0, `rgba(${particleSpark.rgb},${fade * 0.65})`);
+        glow.addColorStop(1, `rgba(${particleSpark.rgb},0)`);
         ctx.fillStyle = glow;
         ctx.beginPath();
         ctx.arc(x, y, r * 4.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = fade;
-        ctx.fillStyle = i % 3 === 0 ? spark.core : spark.rim;
+        ctx.fillStyle = i % 3 === 0 ? particleSpark.core : particleSpark.rim;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
@@ -1058,6 +1564,359 @@ export default function Home() {
         Math.PI * 2,
       );
       ctx.fill();
+      // Signature details for rare sparks use the live body palette, keeping
+      // their color and glow synchronized in both gameplay and Customize.
+      if (sparkBase.effect && !["rainbow", "aurora", "supernova", "plasma"].includes(sparkBase.effect)) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = `rgba(${spark.rgb},.9)`;
+        ctx.fillStyle = `rgba(${spark.rgb},.82)`;
+        ctx.shadowColor = `rgb(${spark.rgb})`;
+        ctx.shadowBlur = pr * 0.55;
+        ctx.lineCap = "round";
+        if (sparkBase.effect === "dark-matter" || sparkBase.effect === "cosmic-nebula") {
+          const orbit = pr * (sparkBase.effect === "dark-matter" ? 1.55 : 1.8);
+          for (let i = 0; i < 4; i++) {
+            const angle = time * (sparkBase.effect === "dark-matter" ? -1.4 : 0.9) + i * Math.PI * 0.5;
+            ctx.beginPath();
+            ctx.arc(px + Math.cos(angle) * orbit, py + Math.sin(angle) * orbit * 0.55, pr * (0.06 + i * 0.012), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          if (sparkBase.effect === "dark-matter") {
+            ctx.globalCompositeOperation = "source-over";
+            ctx.fillStyle = "rgba(7,0,14,.72)";
+            ctx.beginPath();
+            ctx.arc(px, py, pr * 0.46, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (sparkBase.effect === "solar-eclipse") {
+          ctx.lineWidth = pr * 0.08;
+          const rays = 10;
+          for (let i = 0; i < rays; i++) {
+            const angle = time * 0.18 + (i / rays) * Math.PI * 2;
+            const inner = pr * 1.28;
+            const outer = pr * (1.62 + 0.15 * Math.sin(time * 5 + i));
+            ctx.beginPath();
+            ctx.moveTo(px + Math.cos(angle) * inner, py + Math.sin(angle) * inner);
+            ctx.lineTo(px + Math.cos(angle) * outer, py + Math.sin(angle) * outer);
+            ctx.stroke();
+          }
+          ctx.globalCompositeOperation = "source-over";
+          ctx.fillStyle = "rgba(4,1,8,.88)";
+          ctx.beginPath();
+          ctx.arc(px, py, pr * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (sparkBase.effect === "ice-crystal") {
+          const crystalTurn = time * 0.2;
+          // Mobile keeps the same silhouette with fewer paths and no large blur.
+          const frostSides = mobileRendering ? [0] : [-1, 1];
+          const iceShardCount = mobileRendering ? 2 : 4;
+          const frostGradient = ctx.createLinearGradient(px, py + pr, px, py + pr * 3.35);
+          frostGradient.addColorStop(0, `rgba(${spark.rgb},.62)`);
+          frostGradient.addColorStop(0.55, `rgba(${spark.rgb},.24)`);
+          frostGradient.addColorStop(1, `rgba(${spark.rgb},0)`);
+          ctx.strokeStyle = frostGradient;
+          ctx.shadowColor = `rgb(${spark.rgb})`;
+          ctx.shadowBlur = mobileRendering ? 0 : pr * 0.5;
+          ctx.lineWidth = pr * 0.07;
+          for (const side of frostSides) {
+            const centerSway = side === 0 ? Math.sin(time * 2.3) * pr * 0.12 : 0;
+            ctx.beginPath();
+            ctx.moveTo(px + side * pr * 0.32, py + pr * 1.02);
+            ctx.bezierCurveTo(
+              px + side * pr * 0.48 + centerSway,
+              py + pr * 1.55,
+              px + side * pr * (0.66 + Math.sin(time * 2.3) * 0.08) - centerSway,
+              py + pr * 2.4,
+              px + side * pr * 0.92 + centerSway,
+              py + pr * 3.28,
+            );
+            ctx.stroke();
+          }
+
+          // Six primary arms with small crystalline branches form a real snow crystal.
+          ctx.strokeStyle = `rgba(${spark.rgb},.92)`;
+          ctx.lineWidth = pr * 0.065;
+          ctx.globalAlpha = 0.9;
+          for (let arm = 0; arm < 6; arm++) {
+            const angle = crystalTurn + arm * Math.PI / 3;
+            const inner = pr * 1.05;
+            const outer = pr * 1.82;
+            const ax = px + Math.cos(angle) * outer;
+            const ay = py + Math.sin(angle) * outer;
+            ctx.beginPath();
+            ctx.moveTo(px + Math.cos(angle) * inner, py + Math.sin(angle) * inner);
+            ctx.lineTo(ax, ay);
+            ctx.stroke();
+            if (!mobileRendering) {
+              for (const branchSide of [-1, 1]) {
+                const joint = pr * 1.48;
+                const branchAngle = angle + branchSide * 0.48;
+                ctx.beginPath();
+                ctx.moveTo(px + Math.cos(angle) * joint, py + Math.sin(angle) * joint);
+                ctx.lineTo(
+                  px + Math.cos(angle) * joint + Math.cos(branchAngle) * pr * 0.34,
+                  py + Math.sin(angle) * joint + Math.sin(branchAngle) * pr * 0.34,
+                );
+                ctx.stroke();
+              }
+            }
+          }
+
+          // Faceted hexagonal glass overlay turns the round pearl into an ice gem.
+          ctx.globalCompositeOperation = "source-over";
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = `rgba(${spark.rgb},.13)`;
+          ctx.strokeStyle = "rgba(255,255,255,.78)";
+          ctx.lineWidth = pr * 0.045;
+          ctx.beginPath();
+          for (let corner = 0; corner < 6; corner++) {
+            const angle = -Math.PI / 2 + corner * Math.PI / 3;
+            const cx = px + Math.cos(angle) * pr * 0.76;
+            const cy = py + Math.sin(angle) * pr * 0.76;
+            if (corner === 0) ctx.moveTo(cx, cy);
+            else ctx.lineTo(cx, cy);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          if (!mobileRendering) {
+            ctx.globalAlpha = 0.42;
+            for (let facet = 0; facet < 6; facet++) {
+              const angle = -Math.PI / 2 + facet * Math.PI / 3;
+              ctx.beginPath();
+              ctx.moveTo(px, py);
+              ctx.lineTo(px + Math.cos(angle) * pr * 0.76, py + Math.sin(angle) * pr * 0.76);
+              ctx.stroke();
+            }
+          }
+
+          // Four orbiting diamond shards add depth without expensive particles.
+          ctx.globalCompositeOperation = "lighter";
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = `rgb(${spark.rgb})`;
+          ctx.shadowBlur = mobileRendering ? 0 : pr * 0.55;
+          for (let shard = 0; shard < iceShardCount; shard++) {
+            const angle = -time * 0.82 + shard * Math.PI * 2 / iceShardCount;
+            const sx = px + Math.cos(angle) * pr * 2.02;
+            const sy = py + Math.sin(angle) * pr * 1.08;
+            const sr = pr * (0.075 + (shard % 2) * 0.018);
+            ctx.globalAlpha = 0.52 + (shard % 2) * 0.22;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - sr * 1.8);
+            ctx.lineTo(sx + sr, sy);
+            ctx.lineTo(sx, sy + sr * 1.8);
+            ctx.lineTo(sx - sr, sy);
+            ctx.closePath();
+            ctx.fill();
+          }
+        } else if (sparkBase.effect === "tiger-flame") {
+          const flamePulse = 0.82 + (Math.sin(time * 7.2) + 1) * 0.09;
+          // Layered, tapered fire tongues flow into the normal spark trail.
+          const flameGradient = ctx.createLinearGradient(px, py + pr * 0.45, px, py + pr * 3.4);
+          flameGradient.addColorStop(0, `rgba(${spark.rgb},.82)`);
+          flameGradient.addColorStop(0.45, `rgba(${spark.rgb},.46)`);
+          flameGradient.addColorStop(1, `rgba(${spark.rgb},0)`);
+          ctx.fillStyle = flameGradient;
+          ctx.shadowColor = `rgb(${spark.rgb})`;
+          ctx.shadowBlur = pr * 0.72;
+          for (let tongue = 0; tongue < 5; tongue++) {
+            const offset = (tongue - 2) * pr * 0.23;
+            const sway = Math.sin(time * 8.4 + tongue * 1.77) * pr * 0.17;
+            const length = pr * (1.75 + (tongue % 3) * 0.42 + Math.sin(time * 6.2 + tongue) * 0.13);
+            ctx.beginPath();
+            ctx.moveTo(px + offset - pr * 0.15, py + pr * 0.64);
+            ctx.bezierCurveTo(
+              px + offset - pr * 0.3 + sway,
+              py + pr * 1.08,
+              px + offset + sway,
+              py + length * 0.72,
+              px + offset + sway * 1.35,
+              py + length,
+            );
+            ctx.bezierCurveTo(
+              px + offset + pr * 0.22 + sway,
+              py + length * 0.7,
+              px + offset + pr * 0.25,
+              py + pr * 1.04,
+              px + offset + pr * 0.15,
+              py + pr * 0.64,
+            );
+            ctx.closePath();
+            ctx.globalAlpha = flamePulse * (0.7 + (tongue % 2) * 0.18);
+            ctx.fill();
+          }
+
+          // A broken rotating corona keeps the flame energetic around the head.
+          ctx.globalAlpha = 0.72 * flamePulse;
+          ctx.strokeStyle = `rgba(${spark.rgb},.92)`;
+          ctx.lineWidth = pr * 0.085;
+          ctx.setLineDash([pr * 0.46, pr * 0.16]);
+          ctx.lineDashOffset = time * pr * 1.45;
+          ctx.beginPath();
+          ctx.ellipse(px, py, pr * 1.47, pr * 1.25, -0.18, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Tiger markings are curved and clipped visually inside the pearl.
+          ctx.globalCompositeOperation = "source-over";
+          ctx.strokeStyle = "rgba(55,8,0,.82)";
+          ctx.shadowBlur = 0;
+          ctx.lineCap = "round";
+          for (let stripe = -1; stripe <= 1; stripe++) {
+            const sy = py + stripe * pr * 0.34;
+            ctx.lineWidth = pr * (stripe === 0 ? 0.17 : 0.125);
+            ctx.beginPath();
+            ctx.moveTo(px - pr * 0.67, sy - pr * 0.12);
+            ctx.quadraticCurveTo(
+              px - pr * 0.05,
+              sy + pr * (stripe % 2 === 0 ? 0.26 : -0.25),
+              px + pr * 0.58,
+              sy + pr * 0.08,
+            );
+            ctx.stroke();
+          }
+
+          // Hot inner ember and a few deterministic sparks finish the flame.
+          ctx.globalCompositeOperation = "lighter";
+          ctx.fillStyle = "#fff3c4";
+          ctx.shadowColor = `rgb(${spark.rgb})`;
+          ctx.shadowBlur = pr * 0.75;
+          ctx.globalAlpha = 0.72 + flamePulse * 0.2;
+          ctx.beginPath();
+          ctx.arc(px - pr * 0.12, py - pr * 0.16, pr * 0.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `rgb(${spark.rgb})`;
+          for (let ember = 0; ember < 5; ember++) {
+            const travel = (time * (0.55 + ember * 0.035) + ember * 0.19) % 1;
+            const ex = px + Math.sin(time * 4.1 + ember * 2.3) * pr * (0.65 + travel * 0.85);
+            const ey = py + pr * (1.15 + travel * 2.25);
+            const er = pr * (0.035 + (1 - travel) * 0.035);
+            ctx.globalAlpha = (1 - travel) * 0.72;
+            ctx.beginPath();
+            ctx.arc(ex, ey, er, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (sparkBase.effect === "neon-lightning") {
+          const electricPulse = 0.7 + Math.max(0, Math.sin(time * 14.5)) * 0.3;
+          // Broken energy rings make the charge feel contained around the core.
+          ctx.globalAlpha = 0.76 * electricPulse;
+          ctx.lineWidth = pr * 0.075;
+          ctx.setLineDash([pr * 0.32, pr * 0.18]);
+          ctx.lineDashOffset = -time * pr * 1.9;
+          ctx.beginPath();
+          ctx.ellipse(px, py, pr * 1.58, pr * 1.28, time * 0.28, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Three irregular, rotating branches replace the old mirrored zigzags.
+          ctx.globalAlpha = 0.9 * electricPulse;
+          ctx.lineWidth = pr * 0.085;
+          for (let branch = 0; branch < 3; branch++) {
+            const baseAngle = time * 0.34 + branch * (Math.PI * 2 / 3) - 0.55;
+            ctx.beginPath();
+            for (let step = 0; step < 5; step++) {
+              const radius = pr * (1.12 + step * 0.24);
+              const angle = baseAngle + Math.sin(time * 15 + branch * 4.7 + step * 2.2) * 0.13;
+              const bx = px + Math.cos(angle) * radius;
+              const by = py + Math.sin(angle) * radius;
+              if (step === 0) ctx.moveTo(bx, by);
+              else ctx.lineTo(bx, by);
+            }
+            ctx.stroke();
+          }
+
+          // A narrow electric filament continues into the normal trail.
+          ctx.globalAlpha = 0.72;
+          ctx.lineWidth = pr * 0.075;
+          ctx.beginPath();
+          ctx.moveTo(px, py + pr * 1.14);
+          for (let step = 1; step <= 6; step++) {
+            const by = py + pr * (1.14 + step * 0.37);
+            const bx = px + Math.sin(time * 17 + step * 2.15) * pr * (0.1 + step * 0.035);
+            ctx.lineTo(bx, by);
+          }
+          ctx.stroke();
+
+          // Crisp white-blue heart sells the high-voltage flash without a large bloom.
+          ctx.globalAlpha = 0.55 + electricPulse * 0.35;
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = `rgb(${spark.rgb})`;
+          ctx.shadowBlur = pr * 0.9;
+          ctx.beginPath();
+          ctx.arc(px, py, pr * (0.24 + electricPulse * 0.05), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (sparkBase.effect === "toxic-reactor") {
+          for (let i = 0; i < 3; i++) {
+            const angle = time * 1.9 + i * Math.PI * 2 / 3;
+            ctx.beginPath();
+            ctx.arc(px + Math.cos(angle) * pr * 1.55, py + Math.sin(angle) * pr * 1.1, pr * 0.13, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (sparkBase.effect === "silver-comet") {
+          const cometPulse = 0.86 + Math.sin(time * 3.6) * 0.08;
+          // Three curved ribbons form a clean, layered silver tail.
+          for (let ribbon = 0; ribbon < 3; ribbon++) {
+            const side = ribbon - 1;
+            const tailGradient = ctx.createLinearGradient(
+              px,
+              py + pr,
+              px + side * pr * 1.15,
+              py + pr * (3.9 + ribbon * 0.28),
+            );
+            tailGradient.addColorStop(0, `rgba(${spark.rgb},${0.72 - ribbon * 0.08})`);
+            tailGradient.addColorStop(0.48, `rgba(${spark.rgb},${0.28 - ribbon * 0.035})`);
+            tailGradient.addColorStop(1, `rgba(${spark.rgb},0)`);
+            ctx.strokeStyle = tailGradient;
+            ctx.lineWidth = pr * (0.12 - ribbon * 0.018);
+            ctx.globalAlpha = cometPulse;
+            ctx.beginPath();
+            ctx.moveTo(px + side * pr * 0.38, py + pr * 1.02);
+            ctx.bezierCurveTo(
+              px + side * pr * 0.52,
+              py + pr * 1.72,
+              px + side * pr * (0.62 + ribbon * 0.16),
+              py + pr * 2.72,
+              px + side * pr * (0.88 + ribbon * 0.18),
+              py + pr * (3.72 + ribbon * 0.28),
+            );
+            ctx.stroke();
+          }
+
+          // A polished orbital highlight gives the head a metallic, premium finish.
+          ctx.strokeStyle = `rgba(${spark.rgb},.82)`;
+          ctx.shadowColor = `rgb(${spark.rgb})`;
+          ctx.shadowBlur = pr * 0.52;
+          ctx.lineWidth = pr * 0.07;
+          ctx.globalAlpha = 0.88;
+          const orbitPhase = time * 0.72;
+          ctx.beginPath();
+          ctx.ellipse(px, py, pr * 1.48, pr * 0.58, -0.62, orbitPhase, orbitPhase + Math.PI * 1.15);
+          ctx.stroke();
+
+          // Small silver fragments travel around the head instead of a single rigid line.
+          ctx.fillStyle = "#ffffff";
+          for (let shard = 0; shard < 4; shard++) {
+            const angle = time * 1.1 + shard * Math.PI * 0.5;
+            const sx = px + Math.cos(angle) * pr * (1.45 + shard * 0.08);
+            const sy = py + Math.sin(angle) * pr * 0.72;
+            const size = pr * (0.045 + (shard % 2) * 0.022);
+            ctx.globalAlpha = 0.5 + (shard % 2) * 0.24;
+            ctx.fillRect(sx - size, sy - size * 0.34, size * 2, size * 0.68);
+          }
+
+          // Moving specular flare across the pearl.
+          const shine = time * 1.25;
+          ctx.globalAlpha = 0.82;
+          ctx.lineWidth = pr * 0.055;
+          ctx.strokeStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.moveTo(px + Math.cos(shine) * pr * 0.16, py + Math.sin(shine) * pr * 0.16);
+          ctx.lineTo(px + Math.cos(shine) * pr * 0.62, py + Math.sin(shine) * pr * 0.62);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
       ctx.restore();
       ctx.restore();
       frame = requestAnimationFrame(draw);
@@ -1068,6 +1927,9 @@ export default function Home() {
       resizeObserver.disconnect();
     };
   }, []);
+
+  const selectedCustomizeSlot = CUSTOMIZE_SLOTS[customizeSelection] ?? CUSTOMIZE_SLOTS[0];
+  const selectedCustomizeTheme = selectedCustomizeSlot.theme ?? "cyan";
 
   return (
     <main
@@ -1115,6 +1977,7 @@ export default function Home() {
             type="button"
             aria-label="Settings"
             onPointerDown={(e) => e.stopPropagation()}
+            onClick={openSettings}
           >
             <img
               className="lobby-settings-icon"
@@ -1131,7 +1994,11 @@ export default function Home() {
               className="lobby-actions"
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <button className="lobby-card" type="button">
+              <button
+                className="lobby-card"
+                type="button"
+                onClick={openCustomize}
+              >
                 <img
                   className="lobby-card-icon"
                   src="/lobby-customize.png?v=1"
@@ -1172,10 +2039,226 @@ export default function Home() {
                 />
                 <b>SHOP</b>
               </button>
+              <button
+                className="lobby-test-coins"
+                type="button"
+                aria-label="Add 10000 test coins"
+                onClick={() => {
+                  setTotalCoins((current) => {
+                    const next = current + 10000;
+                    localStorage.setItem("switch-drop-total-coins", String(next));
+                    return next;
+                  });
+                }}
+              >
+                +10,000 TEST COINS
+              </button>
             </div>
             <div className="lobby-start">TAP TO START</div>
           </section>
         </>
+      )}
+      {settingsOpen && (
+        <section
+          className="shop-overlay settings-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={settingsPrivacyOpen ? "Privacy policy" : "Settings"}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="settings-panel premium-modal">
+            <button
+              className="shop-close"
+              type="button"
+              aria-label="Close settings"
+              onClick={closeSettings}
+            >
+              <img
+                src="/shop-close.png?v=1"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                decoding="async"
+              />
+            </button>
+            {!settingsPrivacyOpen ? (
+              <>
+                <div className="settings-heading premium-heading">
+                  <span aria-hidden="true" />
+                  <div>
+                    <small>SWITCH DROP</small>
+                    <h2>SETTINGS</h2>
+                  </div>
+                  <span aria-hidden="true" />
+                </div>
+                <div className="settings-options">
+                  <button
+                    className="settings-toggle-row"
+                    type="button"
+                    aria-pressed={musicEnabled}
+                    onClick={toggleMusic}
+                  >
+                    <img className="settings-icon" src="/settings-music.png?v=1" alt="" aria-hidden="true" draggable={false} decoding="async" />
+                    <strong>MUSIC</strong>
+                    <span className={`settings-switch${musicEnabled ? " is-on" : ""}`} aria-hidden="true">
+                      <i />
+                    </span>
+                  </button>
+                  <button
+                    className="settings-toggle-row"
+                    type="button"
+                    aria-pressed={soundEnabled}
+                    onClick={toggleSound}
+                  >
+                    <img className="settings-icon" src="/settings-sound.png?v=1" alt="" aria-hidden="true" draggable={false} decoding="async" />
+                    <strong>SOUND EFFECTS</strong>
+                    <span className={`settings-switch${soundEnabled ? " is-on" : ""}`} aria-hidden="true">
+                      <i />
+                    </span>
+                  </button>
+                  <button
+                    className="settings-link-row"
+                    type="button"
+                    onClick={() => setSettingsPrivacyOpen(true)}
+                  >
+                    <img className="settings-icon" src="/settings-privacy.png?v=1" alt="" aria-hidden="true" draggable={false} decoding="async" />
+                    <strong>PRIVACY POLICY</strong>
+                  </button>
+                  <a
+                    className="settings-link-row"
+                    href="mailto:ustapisoo@gmail.com?subject=Switch%20Drop%20Support"
+                  >
+                    <img className="settings-icon" src="/settings-support.png?v=1" alt="" aria-hidden="true" draggable={false} decoding="async" />
+                    <strong>SUPPORT</strong>
+                  </a>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="settings-heading premium-heading">
+                  <span aria-hidden="true" />
+                  <div>
+                    <small>SWITCH DROP</small>
+                    <h2>PRIVACY POLICY</h2>
+                  </div>
+                  <span aria-hidden="true" />
+                </div>
+                <article className="settings-privacy-copy">
+                  <p><strong>Last updated: October 4, 2026</strong></p>
+                  <p>Switch Drop is designed to be playable without creating an account. Your game progress, settings, selected spark and locally earned coins are stored on your device.</p>
+                  <p>We do not currently ask you to provide your name, contacts, photos or precise location. The game does not sell personal information.</p>
+                  <p>If purchases or third-party services are enabled in a future release, the policy will be updated to explain what information those services process and why.</p>
+                  <p>For privacy questions or support, contact <a href="mailto:ustapisoo@gmail.com">ustapisoo@gmail.com</a>.</p>
+                </article>
+                <button
+                  className="settings-back-button"
+                  type="button"
+                  onClick={() => setSettingsPrivacyOpen(false)}
+                >
+                  BACK TO SETTINGS
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+      {customizeOpen && (
+        <section
+          className="shop-overlay customize-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Customize spark"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="customize-panel premium-modal">
+            <button
+              className="shop-close"
+              type="button"
+              aria-label="Close customize"
+              onClick={closeCustomize}
+            >
+              <img
+                src="/shop-close.png?v=1"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                decoding="async"
+              />
+            </button>
+            <div className="customize-heading premium-heading">
+              <span aria-hidden="true" />
+              <div>
+                <small>CHOOSE YOUR SPARK</small>
+                <h2>CUSTOMIZE</h2>
+              </div>
+              <span aria-hidden="true" />
+            </div>
+            <div
+              className={`customize-preview customize-preview--${selectedCustomizeTheme}`}
+              style={customizeStyle(selectedCustomizeTheme)}
+              aria-label={`${skinLabel(selectedCustomizeTheme)} spark preview`}
+            >
+              <div className="customize-preview-aura" aria-hidden="true" />
+              <img
+                className={`customize-preview-spark customize-effect-${selectedCustomizeTheme}`}
+                src="/shop-life.png?v=1"
+                alt={`${skinLabel(selectedCustomizeTheme)} spark`}
+                draggable={false}
+                decoding="async"
+              />
+            </div>
+            <div className="customize-grid-shell">
+              <div className="customize-grid">
+                {CUSTOMIZE_SLOTS.map((slot) => (
+                  (() => {
+                    const owned =
+                      customizeOwned[slot.id - 1] || slot.id === 1;
+                    return (
+                      <button
+                        key={slot.id}
+                        style={customizeStyle(slot.theme)}
+                        className={`customize-slot${owned ? " is-unlocked" : " is-locked"}${owned && customizeSelection === slot.id - 1 ? " is-selected" : ""}${slot.rare ? " is-rare" : ""}`}
+                        type="button"
+                        aria-label={
+                          owned
+                            ? `${skinLabel(slot.theme)} spark`
+                            : `Mystery ${slot.rare ? "rare" : "common"} spark, ${slot.price} coins`
+                        }
+                        onClick={() => handleCustomizeSlot(slot)}
+                      >
+                        {owned ? (
+                          <img
+                            className={`customize-slot-spark customize-effect-${slot.theme}`}
+                            src="/shop-life.png?v=1"
+                            alt=""
+                            aria-hidden="true"
+                            draggable={false}
+                            decoding="async"
+                          />
+                        ) : (
+                          <>
+                            <strong>?</strong>
+                            <span className="customize-price">
+                              <span className="customize-coin" aria-hidden="true">
+                                C
+                              </span>
+                              {slot.price}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()
+                ))}
+              </div>
+            </div>
+            {customizeNotice && (
+              <div className="customize-notice" aria-live="polite">
+                {customizeNotice}
+              </div>
+            )}
+          </div>
+        </section>
       )}
       {shopOpen && (
         <section
@@ -1382,6 +2465,13 @@ export default function Home() {
           <span>PAUSED</span>
           <button type="button" onClick={togglePause}>
             RESUME
+          </button>
+          <button
+            className="pause-lobby-button"
+            type="button"
+            onClick={enterLobby}
+          >
+            LOBBY
           </button>
         </section>
       )}
