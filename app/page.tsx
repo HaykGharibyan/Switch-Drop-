@@ -206,7 +206,7 @@ export default function Home() {
             g.runners.push({
               kind: "orb",
               lane: (1 - blocked) as 0 | 1,
-              z: -0.432,
+              z: -0.36,
               value: Math.random() < difficulty.goldChance ? 2 : 1,
             });
             g.sparksSpawned += 1;
@@ -223,7 +223,7 @@ export default function Home() {
               g.runners.push({
                 kind: "orb",
                 lane: blocked,
-                z: -0.672,
+                z: -0.56,
                 value: Math.random() < difficulty.goldChance ? 2 : 1,
               });
               g.sparksSpawned += 1;
@@ -301,7 +301,29 @@ export default function Home() {
       const coverY = (h - BACKGROUND_HEIGHT * coverScale) * 0.5;
       // Keep pre-horizon spawn positions visible above the horizon instead of
       // clamping them to the same y-position until they enter the track.
-      const depth = (z: number) => (z < 0 ? z * 0.18 : z ** 1.65);
+      // Blend the distant linear motion into the foreground perspective over a
+      // wide interval. Matching both position and slope keeps the whole trip
+      // feeling like one continuous movement without a pause at the horizon.
+      const depth = (z: number) => {
+        const blendEdge = 0.32;
+        if (z <= -blendEdge) return z * 0.2;
+        if (z >= blendEdge) return z ** 1.65;
+
+        const t = (z + blendEdge) / (blendEdge * 2);
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const start = -blendEdge * 0.2;
+        const end = blendEdge ** 1.65;
+        const startSlope = 0.2 * blendEdge * 2;
+        const endSlope = 1.65 * blendEdge ** 0.65 * blendEdge * 2;
+
+        return (
+          (2 * t3 - 3 * t2 + 1) * start +
+          (t3 - 2 * t2 + t) * startSlope +
+          (-2 * t3 + 3 * t2) * end +
+          (t3 - t2) * endSlope
+        );
+      };
       // Start at a higher point in the tunnel, then smoothly meet the same
       // foreground position so objects enter earlier without shifting the track.
       const sceneY = (z: number) => 0.17 + depth(z) * 0.87;
