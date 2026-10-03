@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  requestShopPurchase,
+  SHOP_PRODUCTS,
+  type ShopProductId,
+} from "./shop-products";
 
 type Runner = {
   kind: "barrier" | "orb";
@@ -21,6 +26,19 @@ type Difficulty = {
   goldChance: number;
 };
 type SparkTheme = { rgb: string; core: string; rim: string; deep: string };
+type DailyRewardStatus = {
+  serverNow: number;
+  claimedDay: number;
+  nextDay: number;
+  canClaim: boolean;
+  nextClaimAt: number;
+  expiresAt: number | null;
+  rewards: readonly number[];
+  error?: string;
+};
+type ClaimedReward = { amount: number; day: number };
+
+const DAILY_REWARDS = [100, 150, 200, 250, 300, 350, 550] as const;
 
 const SPARK_THEMES = {
   cyan: { rgb: "44,232,255", core: "#ffffff", rim: "#a9ffff", deep: "#008dff" },
@@ -43,6 +61,23 @@ type SparkThemeName = keyof typeof SPARK_THEMES;
 const DEFAULT_PROFILE: PlayerProfile = { skill: 50, failStreak: 0, runs: [] };
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
+const formatCountdown = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  return [hours, minutes, remainingSeconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+};
+const clearStaleModalLocation = () => {
+  if (!["#shop", "#daily", "#daily-reward"].includes(window.location.hash))
+    return;
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}`,
+  );
+};
 
 const getDifficulty = (profile: PlayerProfile): Difficulty => {
   // Help appears only after three sub-1000 runs. Skilled players get faster,
@@ -87,6 +122,7 @@ export default function Home() {
     last: 0,
     over: false,
     paused: false,
+    lobby: true,
     sparksSpawned: 0,
     sparksCollected: 0,
     sparkTheme: "cyan" as SparkThemeName,
@@ -97,15 +133,29 @@ export default function Home() {
   const [totalCoins, setTotalCoins] = useState(0);
   const [over, setOver] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [lobby, setLobby] = useState(true);
   const [best, setBest] = useState(0);
   const bestRef = useRef(0);
+  const displayedScoreRef = useRef(0);
   const [newBest, setNewBest] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
+  const shopHistoryRef = useRef(false);
+  const [dailyOpen, setDailyOpen] = useState(false);
+  const [dailyStatus, setDailyStatus] = useState<DailyRewardStatus | null>(null);
+  const [dailyLoading, setDailyLoading] = useState(false);
+  const [dailyError, setDailyError] = useState("");
+  const [dailyRemaining, setDailyRemaining] = useState(0);
+  const [claimedReward, setClaimedReward] = useState<ClaimedReward | null>(null);
+  const dailyHistoryRef = useRef(false);
+  const rewardHistoryRef = useRef(false);
+  const dailyClockRef = useRef({ serverNow: 0, performanceNow: 0 });
 
-  const reset = useCallback(() => {
+  const initializeRun = useCallback((showLobby: boolean) => {
     const difficulty = getDifficulty(profileRef.current);
     const sparkTheme = gameRef.current.sparkTheme ?? "cyan";
     sparkTrailRef.current = [];
     sparkClockRef.current = 0;
+    displayedScoreRef.current = 0;
     gameRef.current = {
       lane: 0,
       visualLane: 0,
@@ -117,6 +167,7 @@ export default function Home() {
       last: performance.now(),
       over: false,
       paused: false,
+      lobby: showLobby,
       sparksSpawned: 0,
       sparksCollected: 0,
       sparkTheme,
@@ -126,15 +177,128 @@ export default function Home() {
     setCoins(0);
     setOver(false);
     setPaused(false);
+    setLobby(showLobby);
     setNewBest(false);
   }, []);
+  const enterLobby = useCallback(() => initializeRun(true), [initializeRun]);
+  const startGame = useCallback(() => initializeRun(false), [initializeRun]);
+  const openShop = useCallback(() => {
+    if (shopHistoryRef.current) return;
+    clearStaleModalLocation();
+    shopHistoryRef.current = true;
+    window.history.pushState({ switchDropShop: true }, "", "#shop");
+    setShopOpen(true);
+  }, []);
+  const closeShop = useCallback(() => {
+    if (!shopHistoryRef.current) return;
+    shopHistoryRef.current = false;
+    setShopOpen(false);
+    if (window.history.state?.switchDropShop) window.history.back();
+  }, []);
+  const handleShopPurchase = useCallback((productId: ShopProductId) => {
+    requestShopPurchase(productId);
+  }, []);
+  const applyDailyStatus = useCallback((status: DailyRewardStatus) => {
+    dailyClockRef.current = {
+      serverNow: status.serverNow,
+      performanceNow: performance.now(),
+    };
+    setDailyStatus(status);
+    setDailyRemaining(
+      status.canClaim ? 0 : Math.max(0, status.nextClaimAt - status.serverNow),
+    );
+  }, []);
+  const loadDailyStatus = useCallback(async () => {
+    setDailyLoading(true);
+    setDailyError("");
+    try {
+      const response = await fetch("/api/daily-reward", { cache: "no-store" });
+      const data = (await response.json()) as DailyRewardStatus;
+      if (!response.ok) throw new Error(data.error || "Unable to load rewards.");
+      applyDailyStatus(data);
+    } catch (error) {
+      setDailyError(
+        error instanceof Error ? error.message : "Unable to load rewards.",
+      );
+    } finally {
+      setDailyLoading(false);
+    }
+  }, [applyDailyStatus]);
+  const openDaily = useCallback(() => {
+    if (dailyHistoryRef.current) return;
+    clearStaleModalLocation();
+    dailyHistoryRef.current = true;
+    window.history.pushState({ switchDropDaily: true }, "", "#daily");
+    setDailyOpen(true);
+    void loadDailyStatus();
+  }, [loadDailyStatus]);
+  const closeDaily = useCallback(() => {
+    if (!dailyHistoryRef.current) return;
+    dailyHistoryRef.current = false;
+    setDailyOpen(false);
+    setDailyError("");
+    if (window.history.state?.switchDropDaily) window.history.back();
+  }, []);
+  const closeRewardPopup = useCallback(() => {
+    if (!rewardHistoryRef.current) {
+      setClaimedReward(null);
+      return;
+    }
+    rewardHistoryRef.current = false;
+    setClaimedReward(null);
+    if (window.history.state?.switchDropReward) window.history.back();
+  }, []);
+  const claimDailyReward = useCallback(async () => {
+    if (dailyLoading || !dailyStatus?.canClaim) return;
+    setDailyLoading(true);
+    setDailyError("");
+    try {
+      const response = await fetch("/api/daily-reward", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const data = (await response.json()) as DailyRewardStatus & {
+        claimed?: boolean;
+        reward?: number;
+        day?: number;
+      };
+      if (!response.ok || !data.claimed || !data.reward || !data.day) {
+        if (data.serverNow) applyDailyStatus(data);
+        throw new Error(data.error || "Unable to claim reward.");
+      }
+      applyDailyStatus(data);
+      setTotalCoins((current) => {
+        const next = current + data.reward!;
+        localStorage.setItem("switch-drop-total-coins", String(next));
+        return next;
+      });
+      rewardHistoryRef.current = true;
+      window.history.pushState(
+        { switchDropDaily: true, switchDropReward: true },
+        "",
+        "#daily-reward",
+      );
+      setClaimedReward({ amount: data.reward, day: data.day });
+    } catch (error) {
+      setDailyError(
+        error instanceof Error ? error.message : "Unable to claim reward.",
+      );
+    } finally {
+      setDailyLoading(false);
+    }
+  }, [applyDailyStatus, dailyLoading, dailyStatus]);
   const switchLane = useCallback(() => {
     const g = gameRef.current;
-    if (!g.over && !g.paused) g.lane = g.lane === 0 ? 1 : 0;
+    if (!g.over && !g.paused && !g.lobby)
+      g.lane = g.lane === 0 ? 1 : 0;
   }, []);
+  const handleScreenPointerDown = useCallback(() => {
+    if (gameRef.current.lobby) startGame();
+    else switchLane();
+  }, [startGame, switchLane]);
   const togglePause = useCallback(() => {
     const g = gameRef.current;
-    if (g.over) return;
+    if (g.over || g.lobby) return;
     g.paused = !g.paused;
     g.last = performance.now();
     setPaused(g.paused);
@@ -160,34 +324,118 @@ export default function Home() {
       } catch {
         profileRef.current = DEFAULT_PROFILE;
       }
-      reset();
+      enterLobby();
     });
     return () => cancelAnimationFrame(id);
-  }, [reset]);
+  }, [enterLobby]);
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as
+        | {
+            switchDropShop?: boolean;
+            switchDropDaily?: boolean;
+            switchDropReward?: boolean;
+          }
+        | null;
+      shopHistoryRef.current = Boolean(state?.switchDropShop);
+      dailyHistoryRef.current = Boolean(state?.switchDropDaily);
+      rewardHistoryRef.current = Boolean(state?.switchDropReward);
+      setShopOpen(Boolean(state?.switchDropShop));
+      setDailyOpen(Boolean(state?.switchDropDaily));
+      if (!state?.switchDropReward) setClaimedReward(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (rewardHistoryRef.current) closeRewardPopup();
+      else if (dailyHistoryRef.current) closeDaily();
+      else closeShop();
+    };
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeDaily, closeRewardPopup, closeShop]);
+
+  useEffect(() => {
+    if (!dailyOpen || !dailyStatus || dailyStatus.canClaim) return;
+    const tick = () => {
+      const elapsed =
+        (performance.now() - dailyClockRef.current.performanceNow) / 1000;
+      const serverNow = dailyClockRef.current.serverNow + elapsed;
+      const remaining = Math.max(
+        0,
+        Math.ceil(dailyStatus.nextClaimAt - serverNow),
+      );
+      setDailyRemaining(remaining);
+      if (remaining === 0) {
+        setDailyStatus((current) =>
+          current ? { ...current, canClaim: true } : current,
+        );
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [dailyOpen, dailyStatus]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
+    const ctx = canvas?.getContext("2d", { alpha: true });
     if (!canvas || !ctx) return;
     let frame = 0;
+    let width = 0;
+    let height = 0;
+    let renderDpr = 1;
+    let idleFrameDrawn = false;
+    let trailSampleAccumulator = 0;
+    const mobileRendering =
+      window.matchMedia("(pointer: coarse)").matches ||
+      Math.min(window.innerWidth, window.innerHeight) < 700;
+    const floorSeamCount = mobileRendering ? 6 : 9;
+    const laneDashCount = mobileRendering ? 10 : 14;
+    const orbParticleCount = mobileRendering ? 4 : 7;
+    const trailParticleCount = mobileRendering ? 10 : 19;
+    const trailSampleInterval = mobileRendering ? 1 / 30 : 1 / 45;
+
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      renderDpr = Math.min(
+        window.devicePixelRatio || 1,
+        mobileRendering ? 1.25 : 1.75,
+      );
+      canvas.width = Math.max(1, Math.floor(width * renderDpr));
+      canvas.height = Math.max(1, Math.floor(height * renderDpr));
+      idleFrameDrawn = false;
+    };
+    const resizeObserver = new ResizeObserver(resizeCanvas);
+    resizeObserver.observe(canvas);
+    resizeCanvas();
+
     const draw = (now: number) => {
       const g = gameRef.current;
-      const rect = canvas.getBoundingClientRect(),
-        dpr = Math.min(devicePixelRatio || 1, 2),
-        w = rect.width,
-        h = rect.height;
-      if (
-        canvas.width !== Math.floor(w * dpr) ||
-        canvas.height !== Math.floor(h * dpr)
-      ) {
-        canvas.width = Math.floor(w * dpr);
-        canvas.height = Math.floor(h * dpr);
+      const w = width;
+      const h = height;
+      if (w <= 0 || h <= 0) {
+        frame = requestAnimationFrame(draw);
+        return;
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const idle = g.over || g.paused;
+      if (idle && idleFrameDrawn) {
+        g.last = now;
+        frame = requestAnimationFrame(draw);
+        return;
+      }
+      idleFrameDrawn = idle;
+      ctx.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const dt = Math.min((now - (g.last || now)) / 1000, 0.035);
       g.last = now;
-      if (!g.over && !g.paused) {
+      if (!g.over && !g.paused && !g.lobby) {
         const difficulty = g.difficulty;
         g.distance += dt * 12 * (g.speed / difficulty.baseSpeed);
         g.speed = Math.min(
@@ -257,6 +505,7 @@ export default function Home() {
           ) {
             g.over = true;
             const final = Math.floor(g.distance);
+            displayedScoreRef.current = final;
             setScore(final);
             setOver(true);
             const oldProfile = profileRef.current;
@@ -291,7 +540,11 @@ export default function Home() {
           }
         }
         g.runners = g.runners.filter((i) => i.z < 1.12 && !i.collected);
-        setScore(Math.floor(g.distance));
+        const nextScore = Math.floor(g.distance);
+        if (nextScore !== displayedScoreRef.current) {
+          displayedScoreRef.current = nextScore;
+          setScore(nextScore);
+        }
       }
       // Match the exact `background-size: cover` transform used by the tunnel image.
       // Every game object is first positioned in the background's 941×1672 design space,
@@ -345,8 +598,8 @@ export default function Home() {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       // Fine floor seams flow out of the tunnel, sharing the objects' perspective.
-      for (let i = 0; i < 9; i++) {
-        const z = (i / 9 + g.distance * 0.0035) % 1;
+      for (let i = 0; i < floorSeamCount; i++) {
+        const z = (i / floorSeamCount + g.distance * 0.0035) % 1;
         const half = w * (0.045 + z * 0.185) * 1.9,
           fy = projectY(z);
         const seam = ctx.createLinearGradient(
@@ -366,8 +619,8 @@ export default function Home() {
         ctx.lineTo(w * 0.5 + half, fy);
         ctx.stroke();
       }
-      for (let i = 0; i < 14; i++) {
-        const z = (i / 14 + g.distance * 0.035) % 1,
+      for (let i = 0; i < laneDashCount; i++) {
+        const z = (i / laneDashCount + g.distance * 0.035) % 1,
           y = projectY(z);
         for (const lane of [0, 1]) {
           ctx.strokeStyle = `rgba(46,226,255,${z * 0.36})`;
@@ -441,8 +694,12 @@ export default function Home() {
           ctx.moveTo(0, r * 0.8);
           ctx.lineTo(0, reach * 0.86);
           ctx.stroke();
-          for (let p = 0; p < 7; p++) {
-            const t = (g.distance * 0.045 + p / 7 + item.lane * 0.23) % 1;
+          for (let p = 0; p < orbParticleCount; p++) {
+            const t =
+              (g.distance * 0.045 +
+                p / orbParticleCount +
+                item.lane * 0.23) %
+              1;
             const dx = Math.sin(p * 4.73) * r * (0.18 + t * 0.65),
               dy = r * 1.2 + t * (reach - r * 1.2);
             const radius = Math.max(0.35, r * 0.12 * (1 - t));
@@ -661,19 +918,32 @@ export default function Home() {
       // Remember the actual path: the wake stays behind when the head switches lanes.
       if (!g.paused && !g.over) {
         sparkClockRef.current += dt;
-        sparkTrailRef.current = sparkTrailRef.current.filter((point) => {
+        const trailPoints = sparkTrailRef.current;
+        for (const point of trailPoints) {
           point.age += dt;
-          return point.age < lifetime;
-        });
-        sparkTrailRef.current.unshift({
-          x: px / w,
-          age: 0,
-          phase: sparkClockRef.current,
-        });
-        sparkTrailRef.current.length = Math.min(
-          sparkTrailRef.current.length,
-          160,
-        );
+        }
+        while (
+          trailPoints.length > 0 &&
+          trailPoints[trailPoints.length - 1].age >= lifetime
+        ) {
+          trailPoints.pop();
+        }
+        trailSampleAccumulator += dt;
+        if (
+          trailPoints.length === 0 ||
+          trailSampleAccumulator >= trailSampleInterval
+        ) {
+          trailSampleAccumulator %= trailSampleInterval;
+          trailPoints.unshift({
+            x: px / w,
+            age: 0,
+            phase: sparkClockRef.current,
+          });
+        }
+        const maxTrailSamples = Math.ceil(lifetime / trailSampleInterval) + 2;
+        if (trailPoints.length > maxTrailSamples) {
+          trailPoints.length = maxTrailSamples;
+        }
       }
       const time = sparkClockRef.current,
         pulse = 1 + Math.sin(time * 5) * 0.025;
@@ -697,8 +967,9 @@ export default function Home() {
         { width: 0.43, alpha: 0.26 },
         { width: 0.105, alpha: 0.8 },
       ]) {
-        for (let i = trail.length - 1; i > 0; i--) {
-          const a = trail[i - 1],
+        const trailStep = mobileRendering ? 2 : 1;
+        for (let i = trail.length - 1; i > 0; i -= trailStep) {
+          const a = trail[Math.max(0, i - trailStep)],
             b = trail[i],
             fade = (1 - b.t) ** 1.7;
           ctx.strokeStyle = `rgba(${spark.rgb},${fade * layer.alpha})`;
@@ -710,8 +981,8 @@ export default function Home() {
         }
       }
       // Particles are emitted along that same historical path, not glued to the head.
-      for (let i = 0; i < 19; i++) {
-        const t = (time * 0.85 + i / 19) % 1,
+      for (let i = 0; i < trailParticleCount; i++) {
+        const t = (time * 0.85 + i / trailParticleCount) % 1,
           age = t * lifetime;
         const point = sparkTrailRef.current.find((sample) => sample.age >= age);
         if (!point || t < 0.07) continue;
@@ -792,15 +1063,33 @@ export default function Home() {
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   return (
     <main
-      className={`game-shell${over ? " is-over" : ""}`}
-      onPointerDown={switchLane}
+      className={`game-shell${over ? " is-over" : ""}${lobby ? " is-lobby" : ""}`}
+      onPointerDown={handleScreenPointerDown}
     >
-      <div className="game-backdrop" />
+      <div className="game-backdrop" aria-hidden="true">
+        <picture>
+          <source
+            media="(pointer: coarse)"
+            srcSet="/switch-drop-bg-mobile.jpg?v=1"
+          />
+          <img
+            src="/switch-drop-bg-v2.png?v=4"
+            alt=""
+            draggable={false}
+            decoding="async"
+            loading="eager"
+            fetchPriority="high"
+          />
+        </picture>
+      </div>
       <div className="center-glow" aria-hidden="true" />
       <div className="game-vignette" />
       <canvas
@@ -808,16 +1097,264 @@ export default function Home() {
         className="game-canvas"
         aria-label="Switch Drop game field"
       />
-      <header className="hud" aria-live="polite">
-        <div className="score-block">
-          <strong>{score}</strong>
-        </div>
-      </header>
+      {!lobby && (
+        <header className="hud" aria-live="polite">
+          <div className="score-block">
+            <strong>{score}</strong>
+          </div>
+        </header>
+      )}
       <div className="total-coins" aria-label={`Total coins ${totalCoins}`}>
         <span className="coin-glyph" aria-hidden="true" />
         <strong>{totalCoins}</strong>
       </div>
-      {!over && (
+      {lobby && !over && (
+        <>
+          <button
+            className="lobby-settings"
+            type="button"
+            aria-label="Settings"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <img
+              className="lobby-settings-icon"
+              src="/lobby-settings.png?v=1"
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              decoding="async"
+            />
+          </button>
+          <section className="lobby-screen" aria-label="Main menu">
+            <h1 className="lobby-title">SWITCH DROP</h1>
+            <div
+              className="lobby-actions"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <button className="lobby-card" type="button">
+                <img
+                  className="lobby-card-icon"
+                  src="/lobby-customize.png?v=1"
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  decoding="async"
+                />
+                <b>CUSTOMIZE</b>
+              </button>
+              <button
+                className="lobby-card"
+                type="button"
+                onClick={openDaily}
+              >
+                <img
+                  className="lobby-card-icon"
+                  src="/lobby-daily-bonus.png?v=1"
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  decoding="async"
+                />
+                <b>DAILY BONUS</b>
+              </button>
+              <button
+                className="lobby-card lobby-shop"
+                type="button"
+                onClick={openShop}
+              >
+                <img
+                  className="lobby-shop-icon"
+                  src="/lobby-shop.png?v=1"
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  decoding="async"
+                />
+                <b>SHOP</b>
+              </button>
+            </div>
+            <div className="lobby-start">TAP TO START</div>
+          </section>
+        </>
+      )}
+      {shopOpen && (
+        <section
+          className="shop-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Shop"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="shop-panel premium-modal">
+            <button
+              className="shop-close"
+              type="button"
+              aria-label="Close shop"
+              onClick={closeShop}
+            >
+              <img
+                src="/shop-close.png?v=1"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                decoding="async"
+              />
+            </button>
+            <div className="shop-heading premium-heading">
+              <span aria-hidden="true" />
+              <div>
+                <small>SWITCH DROP</small>
+                <h2>SHOP</h2>
+              </div>
+              <span aria-hidden="true" />
+            </div>
+            <div className="shop-products">
+              {SHOP_PRODUCTS.map((product) => (
+                <button
+                  key={product.id}
+                  className={`shop-product-card premium-card shop-product-card--${product.tone}`}
+                  type="button"
+                  data-product-id={product.id}
+                  aria-label={`${product.title} ${product.label}, ${product.price}`}
+                  onClick={() => handleShopPurchase(product.id)}
+                >
+                  <span className="shop-product-main">
+                    <img
+                      className="shop-product-art"
+                      src={product.image}
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                      decoding="async"
+                    />
+                    <span className="shop-product-copy">
+                      <strong>{product.title}</strong>
+                      <b>{product.label}</b>
+                    </span>
+                  </span>
+                  <span className="shop-price premium-action">
+                    {product.price}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+      {dailyOpen && (
+        <section
+          className="shop-overlay daily-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Daily rewards"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="daily-panel premium-modal">
+            <button
+              className="shop-close"
+              type="button"
+              aria-label="Close daily rewards"
+              onClick={closeDaily}
+            >
+              <img
+                src="/shop-close.png?v=1"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                decoding="async"
+              />
+            </button>
+            <div className="daily-heading premium-heading">
+              <span aria-hidden="true" />
+              <div>
+                <small>SWITCH DROP</small>
+                <h2>DAILY REWARDS</h2>
+              </div>
+              <span aria-hidden="true" />
+            </div>
+            <div className="daily-grid">
+              {DAILY_REWARDS.map((reward, index) => {
+                const day = index + 1;
+                const claimed = day <= (dailyStatus?.claimedDay ?? 0);
+                const current = day === (dailyStatus?.nextDay ?? 1);
+                return (
+                  <div
+                    className={`daily-day${current ? " is-current" : ""}${claimed ? " is-claimed" : ""}${day === 7 ? " is-jackpot" : ""}`}
+                    key={day}
+                  >
+                    <span>DAY {day}</span>
+                    <img
+                      src="/shop-coins.png?v=1"
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                      decoding="async"
+                    />
+                    <strong>{reward}</strong>
+                    {claimed && <small>CLAIMED</small>}
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              className="daily-claim premium-action"
+              type="button"
+              disabled={
+                dailyLoading || Boolean(dailyStatus && !dailyStatus.canClaim)
+              }
+              onClick={
+                dailyError && !dailyStatus
+                  ? () => void loadDailyStatus()
+                  : () => void claimDailyReward()
+              }
+            >
+              {dailyLoading
+                ? "CHECKING..."
+                : dailyError && !dailyStatus
+                  ? "RETRY"
+                  : dailyStatus?.canClaim
+                    ? "CLAIM"
+                    : `NEXT IN ${formatCountdown(dailyRemaining)}`}
+            </button>
+            <div className="daily-status" aria-live="polite">
+              {dailyError ||
+                (dailyStatus?.canClaim
+                  ? `DAY ${dailyStatus.nextDay} IS READY`
+                  : "COME BACK WHEN THE TIMER ENDS")}
+            </div>
+          </div>
+        </section>
+      )}
+      {claimedReward && (
+        <section
+          className="reward-popup-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Reward received"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="reward-popup premium-modal">
+            <small>DAY {claimedReward.day} REWARD</small>
+            <img
+              src="/shop-coins.png?v=1"
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              decoding="async"
+            />
+            <strong>+{claimedReward.amount}</strong>
+            <b>COINS</b>
+            <button
+              className="reward-continue premium-action"
+              type="button"
+              onClick={closeRewardPopup}
+            >
+              CONTINUE
+            </button>
+          </div>
+        </section>
+      )}
+      {!over && !lobby && (
         <button
           className="pause-button"
           type="button"
@@ -831,13 +1368,13 @@ export default function Home() {
           </span>
         </button>
       )}
-      {!over && score < 45 && (
+      {!over && !lobby && score < 45 && (
         <div className="hint">
           <b>TAP TO SWITCH</b>
           <span className="switch-arrow" aria-hidden="true" />
         </div>
       )}
-      {paused && !over && (
+      {paused && !over && !lobby && (
         <section
           className="pause-screen"
           onPointerDown={(e) => e.stopPropagation()}
@@ -878,7 +1415,11 @@ export default function Home() {
               </strong>
             </div>
           </div>
-          <button className="restart-button" type="button" onClick={reset}>
+          <button
+            className="restart-button"
+            type="button"
+            onClick={enterLobby}
+          >
             <span>RESTART</span>
             <i className="restart-glyph" aria-hidden="true" />
           </button>
